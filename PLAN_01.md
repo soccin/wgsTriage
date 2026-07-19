@@ -73,7 +73,7 @@ wgsTriage/
 │   ├── DECISIONS.md                       COPY
 │   └── NORMAL_BAM_QC_REPORT.md            COPY
 └── tests/
-    ├── testGate.R                         NEW
+    ├── testThresholds.R                   NEW
     └── fixtures/miniCohort/               NEW
         ├── out/metrics/CLEAN_N01/CLEAN_N01.{asm,wgs}.txt
         ├── out/metrics/DEFECT_N01/DEFECT_N01.{asm,wgs}.txt
@@ -116,17 +116,40 @@ computes nothing new, because that is what makes it free to adopt.
 
 ### `.gitignore`
 
-Guards against the accidental commit that undoes the PHI decision.
+Guards against the accidental commit that undoes the PHI decision. As written,
+this differs from the first draft of the plan in two ways, both deliberate.
+
+The background rule denies by default and allows only the three name-free
+aggregates, rather than naming the two files to exclude. Listing the exclusions
+holds only as long as those stay the only name-bearing outputs; inverting it
+means anything the importer starts emitting later is ignored until someone
+consciously allows it. The failure mode becomes a safe file left out, which is
+visible, instead of a name-bearing file committed, which is not.
+
+The reports are excluded by filename as well as by directory, because they
+carry sample names and land wherever `--out` points, which is not always a
+`preflight*` directory.
 
 ```
-# Name-bearing background, until anonymised
-data/background/backgroundSamples.tsv
-data/background/backgroundFlagged.tsv
+# Background. Deny by default, allow only the three name-free aggregates.
+data/background/*
+!data/background/backgroundStats.tsv
+!data/background/backgroundCoverageStats.tsv
+!data/background/backgroundMetricCoverage.tsv
+
+# Any sample-name crosswalk, until anonymised
 *crosswalk*
 
-# Generated reports
+# Generated reports, by directory and by filename
 preflight*/
 wgsTriage_out/
+preflightQC.txt
+preflightQC.html
+preflightQC_samples.tsv
+preflightQC_pairs.tsv
+
+# Input archive, large and name-bearing
+QCData/
 
 # R
 .Rhistory
@@ -163,7 +186,7 @@ Validation table for section 6:
 | Proj_17608 | 96 | 0 fail |
 | ReMap_260130 | 268 | 23 fail |
 
-### `tests/testGate.R` and `tests/fixtures/miniCohort/`
+### `tests/testThresholds.R` and `tests/fixtures/miniCohort/`
 
 One smoke test. A gate that blocks multi-day compute should not be able to
 silently stop gating, and the thresholds are the crown jewels — a regression
@@ -190,8 +213,8 @@ That is sufficient. Do not build a test suite; build this one test.
 | Item | Size | Why not |
 |---|---|---|
 | `QCData/` | 1.4 GB | Input archive. Stays on disk; the importer takes a path. |
-| `background/backgroundSamples.tsv` | 455 rows | Carries `project` + `sample`, 60 of them DMP or accession style. Blocked on anonymisation. |
-| `background/backgroundFlagged.tsv` | 24 rows | Same. Also the evidence list for the ReMap_260130 problem — keep it, locally. |
+| `data/background/backgroundSamples.tsv` | 455 rows | Carries `project` + `sample`, 60 of them DMP or accession style. Blocked on anonymisation. |
+| `data/background/backgroundFlagged.tsv` | 24 rows | Same. Also the evidence list for the ReMap_260130 problem — keep it, locally. |
 | `preflight_16840_N/`, `preflight_17495_I/` | 88 KB | Generated output. Regenerate on demand. |
 | `DELLY_FAILURE_REPORT.*`, `delly_nf_traces.txt`, `execution_trace__DELLY.txt` | 340 KB | Incident forensics for one project, superseded. Belongs with the project, not the tool. |
 | `NORMAL_BAM_QC_REPORT_PI.md`, `NORMAL_BAM_QC_EMAIL_SUMMARY.md` | 15 KB | Audience-specific communications, not tool documentation. |
@@ -213,20 +236,76 @@ uncontrolled names and stay out of the repo, per `.gitignore`.
 ## 6. Order of operations
 
 1. Create the repo, `git init`, branch `feat/init-01` — not master.
-2. Copy the four `COPY` files into the layout above; apply the two renames and
+2. Write `.gitignore` **first**, before anything generated exists and before the
+   first `git add`. This is the step that prevents the mistake.
+3. Copy the four `COPY` files into the layout above; apply the two renames and
    fix the `source()` path in both scripts.
-3. Regenerate the background into `data/background/` and confirm only the three
-   aggregate files are present.
-4. Write `.gitignore` **before** the first `git add`. This is the step that
-   prevents the mistake.
+4. Regenerate the background into `data/background/` and confirm only the three
+   aggregate files are tracked.
 5. Write `README.md` and `docs/METHODS.md`.
-6. Build the fixtures and `tests/testGate.R`; confirm it passes.
+6. Build the fixtures and `tests/testThresholds.R`; confirm it passes.
 7. Run the gate against Proj_16840_N and Proj_17495_I from the new location to
    confirm nothing broke in the move — 10 fail and 0 fail respectively.
 8. Commit. Draft the message in `/tmp` first, conventional commits, no emoji.
+9. Create `master` from the finished branch, then merge. See below.
+10. Add the GitHub remote and push `master`. See below.
 
 Step 7 is not optional. The only thing that changed is paths, and paths are
 exactly what breaks in a move.
+
+`.gitignore` is step 2 rather than step 4 by correction: in the original order
+the background was generated before the ignore rules existed, which opens
+exactly the window the rule is meant to close.
+
+### 6.1 Where master comes from
+
+`git init` does not create a branch. It points `HEAD` at an unborn
+`init.defaultBranch` (here `master`), and that branch only materialises on its
+first commit. Because step 1 switches to `feat/init-01` before committing,
+**`master` is never created.** After the initial commit the repo has exactly one
+branch. This is expected, not a mistake, but it has to be closed out explicitly
+or there is no trunk to merge into or push.
+
+Create `master` once the branch is actually presentable — after step 7, when the
+tests pass and validation reproduces. That way master's first commit is a
+coherent v1 rather than a half-built repo:
+
+```
+git branch master          # master now points at the current commit
+git checkout master
+git merge --ff-only feat/init-01
+```
+
+From then on the normal loop applies, per `~/.claude/CLAUDE.md`: master is the
+trunk, work happens on short-named branches (`feat/updates-01`), and those merge
+back to master. Never commit directly to master.
+
+### 6.2 Going to GitHub
+
+Push `master`, and let GitHub take its name from what you push:
+
+```
+git remote add origin git@github.com:<org>/wgsTriage.git
+git push -u origin master
+```
+
+One trap worth avoiding. GitHub has defaulted new repositories to `main` since
+2020, while this repo and `init.defaultBranch` both say `master`. If the GitHub
+repo is created through the web UI with a README or any initialising file, it
+arrives with a `main` branch and pushing `master` leaves two unrelated trunks in
+one repository. Create the GitHub repo **empty** — no README, no `.gitignore`,
+no licence — and push into it. `gh repo create <org>/wgsTriage --private
+--source=. --push` does this correctly in one step.
+
+Before the first push, confirm the PHI decision survived. `.gitignore` protects
+the working tree, not history, and a push is not reversible in the way a local
+commit is:
+
+```
+git ls-files | grep -E 'backgroundSamples|backgroundFlagged|preflightQC|crosswalk'
+```
+
+That must return nothing.
 
 ---
 
