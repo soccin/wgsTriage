@@ -1,0 +1,29 @@
+# Guards the PHI decision: this repository ships aggregate statistics only.
+# See PLAN_01.md section 3.
+
+# Background. Deny by default and allow only the three name-free aggregates,
+# so any further file the importer emits stays out until it has been reviewed.
+data/background/*
+!data/background/backgroundStats.tsv
+!data/background/backgroundCoverageStats.tsv
+!data/background/backgroundMetricCoverage.tsv
+
+# Any sample-name crosswalk, until the anonymisation work lands.
+*crosswalk*
+
+# Generated reports. These carry real sample names, so they are excluded both
+# by output-directory convention and by filename, whatever --out is set to.
+preflight*/
+wgsTriage_out/
+preflightQC.txt
+preflightQC.html
+preflightQC_samples.tsv
+preflightQC_pairs.tsv
+
+# The source archive is large and name-bearing; it is never part of the repo.
+QCData/
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
