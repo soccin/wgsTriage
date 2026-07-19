@@ -2,15 +2,9 @@
 ##
 ## Pre-flight QC gate. Runs after Map, before anything expensive.
 ##
-## Usage:
-##   ./bin/wgsTriage.R <MapDir> [--background DIR] [--out DIR] [--project NAME]
-##
-## Reads only what the Map stage already produced:
-##   <MapDir>/out/metrics/<sample>/<sample>.asm.txt
-##   <MapDir>/out/metrics/<sample>/<sample>.wgs.txt
-##   <MapDir>/sbam/multiqc/multiqc_data/multiqc_samtools_stats.txt
-##
-## Writes preflightQC.txt, preflightQC.html and preflightQC_samples.tsv.
+## Run with --help for usage. Reads only what the Map stage already produced
+## and computes nothing new. Writes four report files, all name-bearing and
+## all gitignored.
 ##
 ## Always exits 0. This is advisory by decision: it reports loudly and leaves
 ## the run/do-not-run call to a human. If that stops working, make it exit
@@ -44,10 +38,55 @@ source(path(repoRoot, "R", "qcLib.R"))
 ## Arguments.
 ##
 args <- commandArgs(trailingOnly = TRUE)
+defaultBackground <- path(repoRoot, "data", "background")
 
 getOpt <- function(flag, fallback) {
     i <- which(args == flag)
     if (length(i) > 0 && length(args) > i[1]) args[i[1] + 1] else fallback
+}
+
+usage <- function() {
+    glue("
+wgsTriage.R -- post-mapping QC gate. Reads only what the Map stage already
+wrote and renders a verdict per sample and per tumor/normal pair.
+
+Usage:
+  Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>]
+  Rscript bin/wgsTriage.R --help
+
+Arguments:
+  <MapDir>               Map stage output to assess. Read only, nothing is
+                         modified and nothing is recomputed. Expects to find:
+                           <MapDir>/out/metrics/<sample>/<sample>.asm.txt
+                           <MapDir>/out/metrics/<sample>/<sample>.wgs.txt
+                           <MapDir>/sbam/multiqc/multiqc_data/multiqc_samtools_stats.txt
+
+Options:
+  --background <BgDir>   Reference ranges built by bin/wgsTriageBackground.R.
+                         Default: <repoRoot>/data/background
+                         If missing, the gates still run but on fixed
+                         thresholds only, with no out-of-range detection.
+  --out <OutDir>         Directory for the report. Default: ./preflight
+  --project <Name>       Label shown in the report.
+                         Default: the directory containing <MapDir>.
+  -h, --help             Show this message and exit.
+
+Writes into <OutDir>:
+  preflightQC.txt          the console report, as text
+  preflightQC.html         the same report, formatted
+  preflightQC_samples.tsv  per-sample metrics and verdicts
+  preflightQC_pairs.tsv    per tumor/normal pair verdicts
+
+All four carry real sample names and are gitignored.
+
+Always exits 0, including on FAIL. This is advisory by decision: it reports
+loudly and leaves the run/do-not-run call to a human.
+")
+}
+
+if (any(args %in% c("-h", "--help"))) {
+    cat(usage(), "\n", sep = "")
+    quit(save = "no", status = 0)
 }
 
 flags <- c("--background", "--out", "--project")
@@ -56,15 +95,25 @@ consumed <- c(flags, flagValues[!is.na(flagValues)])
 positional <- args[!args %in% consumed]
 
 if (length(positional) == 0) {
-    stop("usage: wgsTriage.R <MapDir> [--background DIR] [--out DIR] [--project NAME]")
+    stop(glue("
+No Map directory given.
+
+  Usage: Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>]
+
+  <MapDir> is the Map stage output to assess.
+  Run with --help for the full description and the list of outputs.
+"), call. = FALSE)
 }
 
 mapDir <- positional[1]
-backgroundDir <- getOpt("--background", path(repoRoot, "data", "background"))
+if (!dir_exists(mapDir)) {
+    stop(glue("Map directory not found: {mapDir}\n  Run with --help for usage."),
+         call. = FALSE)
+}
+
+backgroundDir <- getOpt("--background", defaultBackground)
 outDir <- getOpt("--out", "preflight")
 projectName <- getOpt("--project", path_file(path_real(path(mapDir, ".."))))
-
-if (!dir_exists(mapDir)) stop(glue("Map directory not found: {mapDir}"))
 dir_create(outDir)
 
 metricsDir <- path(mapDir, "out", "metrics")

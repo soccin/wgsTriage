@@ -2,15 +2,8 @@
 ##
 ## Build the background QC distribution from previously mapped projects.
 ##
-## Usage:
-##   ./bin/wgsTriageBackground.R [QCDATA_ROOT] [--out DIR]
-##
-## Default root is ./QCData, default output directory is ./background.
-##
-## Writes three files:
-##   backgroundSamples.tsv   every historical sample, with its gate verdict
-##   backgroundStats.tsv     robust reference ranges, from clean samples only
-##   backgroundFlagged.tsv   historical samples that fail the gates
+## Run with --help for usage. Writes five files; three are name-free aggregates
+## that are committed, two carry sample names and are gitignored.
 ##
 ## The reference ranges are computed only from samples that pass the gates.
 ## The archive is known to contain defective cohorts, and including them would
@@ -43,13 +36,62 @@ repoRoot <- if (length(scriptPath) > 0) {
 source(path(repoRoot, "R", "qcLib.R"))
 
 args <- commandArgs(trailingOnly = TRUE)
+defaultOut <- path(repoRoot, "data", "background")
+
+usage <- function() {
+    glue("
+wgsTriageBackground.R -- build the background QC distribution that gives
+wgsTriage.R its historical reference ranges.
+
+Usage:
+  Rscript bin/wgsTriageBackground.R <QCDir> [--out <OutDir>]
+  Rscript bin/wgsTriageBackground.R --help
+
+Arguments:
+  <QCDir>           Archive of previously mapped projects. Searched recursively
+                    for Picard <sample>.asm.txt and <sample>.wgs.txt, and for
+                    multiqc_samtools_stats.txt. Read only; nothing is modified.
+                    Default: ./QCData
+
+Options:
+  --out <OutDir>    Directory for the five output files.
+                    Default: <repoRoot>/data/background
+  -h, --help        Show this message and exit.
+
+Writes into <OutDir>, overwriting all five on every run:
+  backgroundStats.tsv           reference ranges          no names   committed
+  backgroundCoverageStats.tsv   coverage by sample class  no names   committed
+  backgroundMetricCoverage.tsv  per-metric availability   no names   committed
+  backgroundSamples.tsv         every sample and verdict  NAMES      gitignored
+  backgroundFlagged.tsv         samples failing the gates NAMES      gitignored
+
+Only backgroundStats.tsv is read back by wgsTriage.R. Expect 1 to 2 minutes
+over a roughly 1.4 GB archive.
+")
+}
+
+if (any(args %in% c("-h", "--help"))) {
+    cat(usage(), "\n", sep = "")
+    quit(save = "no", status = 0)
+}
+
 outFlag <- which(args == "--out")
-outDir <- if (length(outFlag) > 0) args[outFlag + 1] else path(repoRoot, "data", "background")
+if (length(outFlag) > 0 && length(args) <= outFlag[1]) {
+    stop("--out requires a directory argument. See --help.", call. = FALSE)
+}
+outDir <- if (length(outFlag) > 0) args[outFlag[1] + 1] else defaultOut
 positional <- args[!args %in% c("--out", outDir)]
 qcRoot <- if (length(positional) > 0) positional[1] else "QCData"
 
 if (!dir_exists(qcRoot)) {
-    stop(glue("QCData root not found: {qcRoot}"))
+    stop(glue("
+QCData root not found: {qcRoot}
+
+  Usage: Rscript bin/wgsTriageBackground.R <QCDir> [--out <OutDir>]
+
+  <QCDir> is the archive of previously mapped projects to scan.
+  Run with --help for the full description and the list of outputs.
+"), call. = FALSE)
 }
 dir_create(outDir)
 
