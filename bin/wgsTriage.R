@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 ##
-## Pre-flight QC gate. Runs after Map, before anything expensive.
+## Post-mapping QC filter. Runs after Map, before anything expensive.
 ##
 ## Run with --help for usage. Reads only what the Map stage already produced
 ## and computes nothing new. Writes four report files, all name-bearing and
@@ -47,7 +47,7 @@ getOpt <- function(flag, fallback) {
 
 usage <- function() {
     glue("
-wgsTriage.R -- post-mapping QC gate. Reads only what the Map stage already
+wgsTriage.R -- post-mapping QC filter. Reads only what the Map stage already
 wrote and renders a verdict per sample and per tumor/normal pair.
 
 Usage:
@@ -64,7 +64,7 @@ Arguments:
 Options:
   --background <BgDir>   Reference ranges built by bin/wgsTriageBackground.R.
                          Default: <repoRoot>/data/background
-                         If missing, the gates still run but on fixed
+                         If missing, the filters still run but on fixed
                          thresholds only, with no out-of-range detection.
   --out <OutDir>         Directory for the report. Default: ./preflight
   --project <Name>       Label shown in the report.
@@ -156,21 +156,21 @@ dat <- dat |>
            hasSamtools = if (haveSamtools) !is.na(supplementaryRate) else FALSE)
 
 ##
-## Drop gates whose entire source is absent for this cohort. A missing multiqc
+## Drop filter thresholds whose entire source is absent for this cohort. A missing multiqc
 ## run is a cohort level fact worth stating once, not sixteen per-sample
 ## MISSING verdicts that bury the real signal.
 ##
-usableGates <- GATES |>
+usableThresholds <- THRESHOLDS |>
     filter(metric %in% names(dat)) |>
     filter(map_lgl(metric, \(m) any(!is.na(dat[[m]]))))
 
-droppedGates <- GATES |> filter(!metric %in% usableGates$metric)
-droppedSources <- setdiff(GATES$source, usableGates$source)
+droppedThresholds <- THRESHOLDS |> filter(!metric %in% usableThresholds$metric)
+droppedSources <- setdiff(THRESHOLDS$source, usableThresholds$source)
 
-gateResults <- dat |>
-    select(sample, all_of(usableGates$metric)) |>
+thresholdResults <- dat |>
+    select(sample, all_of(usableThresholds$metric)) |>
     pivot_longer(-sample, names_to = "metric", values_to = "value") |>
-    left_join(usableGates, by = "metric") |>
+    left_join(usableThresholds, by = "metric") |>
     mutate(status = case_when(
         is.na(value) ~ "MISSING",
         direction == "high" & !is.na(fail) & value > fail ~ "FAIL",
@@ -179,12 +179,12 @@ gateResults <- dat |>
         direction == "low"  & !is.na(warn) & value < warn ~ "WARN",
         .default = "PASS"))
 
-verdicts <- sampleVerdict(gateResults)
+verdicts <- sampleVerdict(thresholdResults)
 
 dat <- dat |> left_join(verdicts, by = "sample")
 
 ##
-## Coverage floor. Advisory only and deliberately not a gate: section 5.8 flags
+## Coverage floor. Advisory only and deliberately not a filter threshold: section 5.8 flags
 ## these figures as untested, and a normal at 17x is a judgement call about the
 ## analysis being attempted rather than a defect in the data. It is annotated
 ## everywhere the verdict appears so it cannot be missed.
@@ -217,7 +217,7 @@ refN <- set_names(refStats$n, refStats$metric)
 foldOf <- function(metric, value) {
     ref <- refMedian[metric]
     if (is.na(ref) || is.na(value) || ref == 0) return(NA_real_)
-    dir <- GATES$direction[GATES$metric == metric]
+    dir <- THRESHOLDS$direction[THRESHOLDS$metric == metric]
     if (length(dir) == 0) return(NA_real_)
     if (dir == "high") value / ref else ref / value
 }
@@ -279,7 +279,7 @@ overallVerdict <- case_when(
     .default = "CLEAR")
 
 ##
-## Plain language explanation for each gate, used in both outputs.
+## Plain language explanation for each filter threshold, used in both outputs.
 ## Section 9.1: the technical term appears nowhere the sequencing core will read.
 ##
 PLAIN <- c(
@@ -337,9 +337,9 @@ if (nExpected != nChecked) {
     addRaw("")
 }
 
-if (nrow(droppedGates) > 0) {
-    add("  NOTE: {nrow(droppedGates)} gate(s) not evaluated, no data in this cohort:")
-    add("  {str_c(droppedGates$metric, collapse = ', ')}")
+if (nrow(droppedThresholds) > 0) {
+    add("  NOTE: {nrow(droppedThresholds)} filter threshold(s) not evaluated, no data in this cohort:")
+    add("  {str_c(droppedThresholds$metric, collapse = ', ')}")
     if ("samtools" %in% droppedSources) {
         addRaw("  Without samtools metrics there is no independent confirmation of the")
         addRaw("  Picard result. Verdicts rest on a single tool.")
@@ -362,7 +362,7 @@ if (nFail > 0) {
     addRaw("  FAILED SAMPLES                                            worst first")
     addRaw(thin)
     chimRef <- if (haveBackground) sprintf("%.2f%%", refMedian["pctChimeras"]) else "n/a"
-    addRaw(glue("  SAMPLE                T/N  SPLIT-READS  READ-USED  COVERAGE  GATES"))
+    addRaw(glue("  SAMPLE                T/N  SPLIT-READS  READ-USED  COVERAGE  THRESHOLDS"))
     addRaw(glue("                             norm {chimRef}    norm 100%   usable   failed"))
     failedSamples |>
         mutate(line = sprintf("  %-21s %-4s %5.1f%% %5s %8s %8s%-4s %3d",
@@ -381,7 +381,7 @@ if (nFail > 0) {
 
 if (any(dat$lowCoverage)) {
     lowCov <- dat |> filter(lowCoverage) |> arrange(meanCoverage)
-    addRaw("  Coverage advisory (separate from the gates above):")
+    addRaw("  Coverage advisory (separate from the filter thresholds above):")
     lowCov |>
         mutate(line = sprintf("    %-21s %-4s %.0fx usable, below the %.0fx floor for %s",
                               str_trunc(sample, 21), tn, meanCoverage,
@@ -490,7 +490,7 @@ addRaw("")
 if (haveBackground) {
     add("  Reference ranges from {max(refN, na.rm = TRUE)} previously mapped samples.")
 } else {
-    addRaw("  No background loaded. Gates ran on fixed thresholds only.")
+    addRaw("  No background loaded. Thresholds are fixed values, no historical comparison.")
     addRaw("  Run bin/wgsTriageBackground.R to enable out-of-range detection.")
 }
 addRaw(rule)
@@ -529,9 +529,9 @@ statusClass <- function(s) str_c("s", str_to_lower(s))
 ## One row of the cohort table: value, reference range, and verdict together.
 ## Design rule 3 -- every number carries its reference range in the same row.
 metricCells <- function(sampleName) {
-    gateResults |>
+    thresholdResults |>
         filter(sample == sampleName) |>
-        arrange(match(metric, GATES$metric)) |>
+        arrange(match(metric, THRESHOLDS$metric)) |>
         mutate(cell = pmap_chr(list(metric, value, status, units), \(m, v, s, u) {
             ref <- refMedian[m]
             refTxt <- if (is.na(ref)) "no background" else sprintf("norm %.2f%s", ref, u)
@@ -557,7 +557,7 @@ cohortRows <- dat |>
     pull(row) |>
     str_c(collapse = "\n")
 
-metricHeader <- usableGates |>
+metricHeader <- usableThresholds |>
     mutate(h = glue('<th>{esc(label)}<span class="sub">{esc(PLAIN[metric])}</span></th>')) |>
     pull(h) |>
     str_c(collapse = "") |>
@@ -588,7 +588,7 @@ failureCards <- if (nFail > 0) {
     failedSamples |>
         pull(sample) |>
         map_chr(\(s) {
-            failing <- gateResults |> filter(sample == s, status == "FAIL")
+            failing <- thresholdResults |> filter(sample == s, status == "FAIL")
             rows <- failing |>
                 mutate(r = pmap_chr(list(metric, value, units), \(m, v, u) {
                     ref <- refMedian[m]
@@ -609,7 +609,7 @@ failureCards <- if (nFail > 0) {
             glue('
 <div class="card">
   <h3>{esc(s)} <span class="sfail verdict">FAILED</span></h3>
-  <p class="lead">This sample did not pass {nrow(failing)} of the {nrow(usableGates)} checks applied.</p>
+  <p class="lead">This sample did not pass {nrow(failing)} of the {nrow(usableThresholds)} checks applied.</p>
   <table class="cardtable">
     <thead><tr><th>What we measured</th><th>This sample</th><th>Normal</th></tr></thead>
     <tbody>{rows}</tbody>
@@ -634,7 +634,7 @@ bannerText <- switch(overallVerdict,
     REVIEW = glue("{nWarn} of {nExpected} samples need review before committing compute"),
     CLEAR = glue("All {nExpected} samples passed -- cleared to proceed"))
 
-thresholdRows <- usableGates |>
+thresholdRows <- usableThresholds |>
     mutate(r = glue('<tr><td>{esc(label)}</td><td>{esc(PLAIN[metric])}</td>',
                     '<td class="num">{if_else(is.na(fail), "--", as.character(fail))}{units}</td>',
                     '<td class="num">{if_else(is.na(warn), "--", as.character(warn))}{units}</td>',
@@ -735,7 +735,7 @@ code {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 
 </ul>
 
 {if (nExpected != nChecked) glue(\'<div class="note"><b>Cohort is incomplete.</b> {nExpected - nChecked} sample(s) are missing metrics and were not fully assessed. A report covering a subset is how the original investigation reached a wrong conclusion.</div>\') else ""}
-{if (nrow(droppedGates) > 0) glue(\'<div class="note"><b>Reduced check set.</b> {nrow(droppedGates)} gate(s) were not evaluated because this cohort carries no data for them: <code>{str_c(droppedGates$metric, collapse = ", ")}</code>.{if ("samtools" %in% droppedSources) " Without samtools metrics there is no independent confirmation of the Picard result, so every verdict below rests on a single tool." else ""}</div>\') else ""}
+{if (nrow(droppedThresholds) > 0) glue(\'<div class="note"><b>Reduced check set.</b> {nrow(droppedThresholds)} filter threshold(s) were not evaluated because this cohort carries no data for them: <code>{str_c(droppedThresholds$metric, collapse = ", ")}</code>.{if ("samtools" %in% droppedSources) " Without samtools metrics there is no independent confirmation of the Picard result, so every verdict below rests on a single tool." else ""}</div>\') else ""}
 
 <h2>Cohort</h2>
 <p class="meta">Worst first. Each cell shows the measured value above the clean-sample reference.</p>
@@ -776,7 +776,7 @@ and unlike the SV caller it fails silently rather than crashing.</p>
 </table>
 </div>
 <p class="meta">A sample tripping {WARN_ESCALATION} or more warnings at once is failed even when no single
-gate fires, since these metrics move together under genuine degradation.
+threshold fires, since these metrics move together under genuine degradation.
 Coverage floors ({COVERAGE_WARN[["N"]]}x normal, {COVERAGE_WARN[["T"]]}x tumor) are advisory and not yet validated.</p>
 
 </div>

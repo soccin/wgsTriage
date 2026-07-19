@@ -1,6 +1,6 @@
 ##
 ## Shared parsing and gating logic for post-mapping pre-flight QC.
-## Sourced by importQCBackground.R and preflightQC.R.
+## Sourced by bin/wgsTriage.R and bin/wgsTriageBackground.R.
 ##
 ## Inputs are restricted to what the Map stage already produces:
 ##   Map/out/metrics/<sample>/<sample>.asm.txt   Picard CollectAlignmentSummaryMetrics
@@ -19,7 +19,7 @@ suppressPackageStartupMessages({
 })
 
 ##
-## Gate definitions.
+## Filter threshold definitions.
 ##
 ## Starting point was NORMAL_BAM_QC_REPORT.md section 5, which reported a 45x
 ## separation with nothing in between and proposed FAIL above 1.0% chimeras.
@@ -33,19 +33,19 @@ suppressPackageStartupMessages({
 ##
 ## So FAIL moves to 5.0% and 1.0% becomes WARN. Every sample in the
 ## Proj_16840_N disaster ran 8.5 to 17.3% and still fails outright, while the
-## nine borderline samples are surfaced for review rather than blocked. A gate
-## that fires on 9% of all historical samples gets ignored, and an ignored gate
+## nine borderline samples are surfaced for review rather than blocked. A filter
+## that fires on 9% of all historical samples gets ignored, and an ignored filter
 ## is the failure mode this whole exercise exists to prevent.
 ##
-## The samtools gates are the independent confirmation: supplementary alignment
+## The samtools thresholds are the independent confirmation: supplementary alignment
 ## rate measures essentially the same physical defect as PCT_CHIMERAS but is
 ## computed by a different tool on a different pass over the data. It is also
 ## the tightest metric available, spanning only 0.094 to 0.160% across every
-## clean sample in the archive, so a 1.0% gate sits 6x above the observed
+## clean sample in the archive, so a 1.0% threshold sits 6x above the observed
 ## maximum. Agreement between the two is what makes a FAIL verdict defensible
 ## to someone upstream who does not want to hear it.
 ##
-GATES <- tribble(
+THRESHOLDS <- tribble(
     ~metric,               ~label,                             ~units, ~direction, ~fail, ~warn, ~source,
     "pctChimeras",         "Read pairs split across the genome",   "%",     "high",   5.0,   1.0, "picard_asm",
     "supplementaryRate",   "Supplementary alignments",             "%",     "high",   1.0,   0.5, "samtools",
@@ -56,7 +56,7 @@ GATES <- tribble(
     "pctExcTotal",         "Bases dropped, all reasons",           "%",     "high",    NA,  35.0, "picard_wgs")
 
 ## A sample tripping this many warnings is treated as a failure even when no
-## single gate fires. These metrics are not independent: genuine degradation
+## single threshold fires. These metrics are not independent: genuine degradation
 ## pushes all of them at once, and three simultaneous warnings is a pattern
 ## rather than a coincidence. Without this, a sample can sit just under every
 ## threshold on every metric and still be unusable.
@@ -133,7 +133,7 @@ patientStem <- function(sample) {
 ## Picard's AlignmentSummaryMetrics schema changed between the version that
 ## produced the archive and the one running now: MEAN_ALIGNED_READ_LENGTH and
 ## the read length quantiles are absent from every historical file. Missing
-## columns must surface as NA, which the gates then report as MISSING. Letting
+## columns must surface as NA, which the filters then report as MISSING. Letting
 ## them error would make the importer refuse whole cohorts, and defaulting them
 ## to zero would silently fail every archived sample.
 ##
@@ -165,7 +165,7 @@ readAsmMetrics <- function(path) {
         meanReadLength    = meanReadLength,
         meanAlignedLength = meanAlignedLength,
         alignedFrac       = meanAlignedLength / meanReadLength,
-        ## Gated as a percentage so it reads on the same scale as every other
+        ## Expressed as a percentage so it reads on the same scale as every other
         ## number in the report. A bare 0.86 next to a column of percentages is
         ## read as 0.86%, which is the opposite of what it means.
         pctReadUsed       = meanAlignedLength / meanReadLength * 100,
@@ -250,12 +250,12 @@ collectPicardSamples <- function(root) {
 }
 
 ##
-## Evaluate the sample level gates. Returns one row per sample per metric so
+## Evaluate the sample level filter thresholds. Returns one row per sample per metric so
 ## that the console, HTML and TSV outputs all render from the same evaluation
 ## rather than each recomputing its own verdict.
 ##
-evaluateGates <- function(dat) {
-    present <- GATES |> filter(metric %in% names(dat))
+evaluateThresholds <- function(dat) {
+    present <- THRESHOLDS |> filter(metric %in% names(dat))
 
     dat |>
         select(sample, all_of(present$metric)) |>
@@ -277,8 +277,8 @@ evaluateGates <- function(dat) {
 ## checked, and reporting it as clean is how a partial report becomes a wrong
 ## report.
 ##
-sampleVerdict <- function(gateResults) {
-    gateResults |>
+sampleVerdict <- function(thresholdResults) {
+    thresholdResults |>
         summarise(
             nFail = sum(status == "FAIL"),
             nWarn = sum(status == "WARN"),
@@ -295,11 +295,11 @@ sampleVerdict <- function(gateResults) {
                 nWarn > 0    ~ "WARN",
                 .default     = "PASS"),
             verdictReason = case_when(
-                nFail > 0 ~ glue("failed {nFail} gate(s): {failedMetrics}"),
+                nFail > 0 ~ glue("failed {nFail} threshold(s): {failedMetrics}"),
                 escalated ~ glue("{nWarn} simultaneous warnings: {warnedMetrics}"),
                 nMissing > 0 ~ glue("{nMissing} metric(s) could not be read"),
                 nWarn > 0 ~ glue("{nWarn} warning(s): {warnedMetrics}"),
-                .default = "all gates within range"))
+                .default = "all thresholds within range"))
 }
 
 ##

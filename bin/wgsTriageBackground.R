@@ -5,7 +5,7 @@
 ## Run with --help for usage. Writes five files; three are name-free aggregates
 ## that are committed, two carry sample names and are gitignored.
 ##
-## The reference ranges are computed only from samples that pass the gates.
+## The reference ranges are computed only from samples that pass the filter thresholds.
 ## The archive is known to contain defective cohorts, and including them would
 ## widen the reference range enough to admit the next bad cohort. Robust
 ## statistics alone are not sufficient protection when the contaminated
@@ -63,7 +63,7 @@ Writes into <OutDir>, overwriting all five on every run:
   backgroundCoverageStats.tsv   coverage by sample class  no names   committed
   backgroundMetricCoverage.tsv  per-metric availability   no names   committed
   backgroundSamples.tsv         every sample and verdict  NAMES      gitignored
-  backgroundFlagged.tsv         samples failing the gates NAMES      gitignored
+  backgroundFlagged.tsv         samples below threshold   NAMES      gitignored
 
 Only backgroundStats.tsv is read back by wgsTriage.R. Expect 1 to 2 minutes
 over a roughly 1.4 GB archive.
@@ -136,19 +136,21 @@ cat(sprintf("Parsed %d samples from %d projects\n", nrow(background), n_distinct
 cat(sprintf("Samtools metrics available for %d samples\n\n", nSamtools))
 
 ##
-## Gate every historical sample. This is the same evaluation the report applies
-## to a current cohort, so the background carries verdicts on the same terms.
+## Apply the filter thresholds to every historical sample. This is the same
+## evaluation the report applies to a current cohort, so the background carries
+## verdicts on the same terms.
 ##
 ## Sample names are not unique across the archive: 100 of them occur in more
 ## than one project, usually because a cohort was remapped under a new name.
-## The gate functions key on a single column, so pass them a project-qualified
-## id. Keying on the bare sample name merges verdicts across unrelated runs and
-## silently assigns one project's failure to another project's sample.
+## The threshold functions key on a single column, so pass them a
+## project-qualified id. Keying on the bare sample name merges verdicts across
+## unrelated runs and silently assigns one project's failure to another
+## project's sample.
 ##
 background <- background |> mutate(uid = str_c(project, "::", sample))
 
-gateResults <- evaluateGates(background |> select(-sample) |> rename(sample = uid))
-verdicts <- sampleVerdict(gateResults) |> rename(uid = sample)
+thresholdResults <- evaluateThresholds(background |> select(-sample) |> rename(sample = uid))
+verdicts <- sampleVerdict(thresholdResults) |> rename(uid = sample)
 
 background <- background |>
     left_join(verdicts, by = "uid") |>
@@ -158,7 +160,7 @@ background <- background |>
 ##
 ## Robust reference ranges from clean samples only.
 ##
-metricCols <- c(GATES$metric, "meanCoverage", "insertSizeAverage",
+metricCols <- c(THRESHOLDS$metric, "meanCoverage", "insertSizeAverage",
                 "pctImproperPairs", "interChromRate", "pctExcDupe")
 metricCols <- metricCols[metricCols %in% names(background)]
 
@@ -236,13 +238,14 @@ cat(rule, "\n\n")
 cat(sprintf("  Samples parsed      %5d\n", nrow(background)))
 cat(sprintf("  Projects            %5d\n", n_distinct(background$project)))
 cat(sprintf("  Reference samples   %5d   clean, used to set the ranges\n", nRef))
-cat(sprintf("  Failing gates       %5d\n", nFailSamples))
+cat(sprintf("  Below threshold     %5d\n", nFailSamples))
 cat(sprintf("  Warning only        %5d\n\n", nWarnSamples))
 
 if (nFailSamples > 0) {
-    cat(sprintf("  %d historical samples fail the gates and are excluded from the\n", nFailSamples))
-    cat("  reference ranges. Review backgroundFlagged.tsv: these are either real\n")
-    cat("  defects that were processed anyway, or evidence a threshold is wrong.\n\n")
+    cat(sprintf("  %d historical samples fall below the filter thresholds and are\n", nFailSamples))
+    cat("  excluded from the reference ranges. Review backgroundFlagged.tsv: these\n")
+    cat("  are either real defects that were processed anyway, or evidence that a\n")
+    cat("  threshold is wrong.\n\n")
 
     cat("  Worst historical samples\n")
     cat("  ", strrep("-", 70), "\n", sep = "")
@@ -270,7 +273,7 @@ referenceStats |>
 missingMetrics <- metricCoverage |> filter(nAvailable == 0)
 if (nrow(missingMetrics) > 0) {
     cat("\n  No background available for: ", str_c(missingMetrics$metric, collapse = ", "), "\n", sep = "")
-    cat("  These gates run on fixed thresholds only, with no historical context.\n")
+    cat("  These filters run on fixed values only, with no historical context.\n")
 }
 
 cat("\n")
