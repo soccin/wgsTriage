@@ -123,12 +123,17 @@ The remaining thresholds are anchored on what clean samples actually do:
 
 | Metric | Observed in clean samples | Threshold | Margin |
 |---|---|---|---|
-| `supplementaryRate` | 0.094 to 0.160% | fail above 1.0% | about 6x above the observed maximum |
-| `pctProperlyPaired` | 99.45 to 99.58% | fail below 97.0% | defective samples ran 87.9 to 94.3% |
+| `supplementaryRate` | 0.094 to 0.389% | fail above 1.0% | about 2.6x above the observed maximum |
+| `pctProperlyPaired` | 97.52 to 99.60% | fail below 97.0% | defective samples ran 72.6 to 96.8% |
 | `pctChimeras` | below 0.5% for 283 of 421 | fail above 5.0% | about 5x |
 
-`supplementaryRate` is the tightest metric available anywhere in the input,
-which is what makes a 6x margin defensible rather than arbitrary.
+`supplementaryRate` is still the tightest metric available anywhere in the
+input. The clean range quoted here is wider than the 0.094 to 0.160% reported
+in earlier versions of this document, and the margin correspondingly smaller.
+That is a correction, not a drift: the earlier figure was computed over 98
+samples that came almost entirely from one cohort, because the importer read
+only multiqc rows suffixed `.recal` and discarded the `.md` rows that most
+cohorts emit instead. The range across all 11 cohorts is genuinely wider.
 
 ### Where the background is thin, and the tool says so
 
@@ -139,16 +144,35 @@ metrics file predates `MEAN_ALIGNED_READ_LENGTH`, so this threshold runs on its
 fixed value with no distribution behind it. This resolves itself as new
 projects accumulate.
 
-The samtools background is thin. Only 98 of 454 archived samples, 21.6%, have
-multiqc data, and all 98 are clean. So those thresholds are anchored on the
-clean range plus a wide margin, not on separation between two observed
-populations. That is a weaker form of evidence and is labelled as such.
+The samtools background is no longer thin: 512 of 599 archived samples, 85.5%,
+now carry samtools metrics. It used to be 98 of 454, and the difference is a
+fixed importer rather than new data. The reader kept only multiqc rows suffixed
+`.recal` and dropped the `.md` rows, which is 512 of the 611 rows in the
+archive.
 
-Reference ranges are computed only from the 346 samples that pass all
-thresholds and carry both Picard files. Including defective samples would widen
-the range enough to admit the next bad cohort. Robust statistics alone are not
-sufficient protection when the contaminated fraction is above 5% and
-concentrated in a single cohort.
+This matters for more than sample count. Every cohort with an elevated
+supplementary rate exists in this archive as `.md` rows alone, so the old
+samtools background contained no defective sample at all, and those thresholds
+rested on the clean range plus a margin with no observed second population to
+point at. Clean samples now run 0.094 to 0.389% and the archive holds samples
+up to 15.4%, so the separation is visible in the data rather than assumed.
+
+One caveat that comes with the fix: `.recal` and `.md` describe the same library
+one pipeline step apart, and on the 99 samples carrying both, `.recal` runs
+lower by up to 0.055 points of supplementary rate, 0.52 of properly paired
+percent and 1.3 of insert size. The reference range therefore blends two BAM
+stages. The offset is around 3% of the 1.0% supplementary threshold and moves no
+sample near a verdict boundary, and `backgroundSamples.tsv` records which stage
+each sample came from in `samtoolsStage`.
+
+Reference ranges are computed from the 557 samples that failed none of the
+thresholds they could be evaluated on; 341 of those carry both Picard files.
+Requiring both files, as this once did, excluded a sample from every reference
+range whenever it was missing one of them, including the ranges built from the
+file it did have. Including defective samples would widen the range enough to
+admit the next bad cohort, so the gate is what a sample failed. Robust
+statistics alone are not sufficient protection when the contaminated fraction is
+above 5% and concentrated in a single cohort.
 
 ---
 
