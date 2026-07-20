@@ -22,6 +22,9 @@ bin/wgsTriageBackground.R   build reference ranges from previously mapped projec
 R/qcLib.R                   shared parsing and filter threshold logic
 data/background/            generated reference ranges, aggregate only
 docs/METHODS.md             how the thresholds were set, and why
+docs/DECISIONS.md           what was chosen, and what is still unvalidated
+docs/NORMAL_BAM_QC_REPORT.md  the original analysis the thresholds derive from
+TODO_260719.md              outstanding work, kept at the root to stay visible
 tests/testThresholds.R      smoke test over synthetic fixtures
 ```
 

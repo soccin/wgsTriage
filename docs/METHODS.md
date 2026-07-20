@@ -83,6 +83,12 @@ one of the others.
 
 ## 3. How the thresholds were set
 
+The derivation is in `docs/NORMAL_BAM_QC_REPORT.md`, which is the original
+analysis of the Proj_16840_N failure and the source of the separation argument
+below. `docs/DECISIONS.md` records what was chosen and what remains
+unvalidated. This section summarises both; those two are what to read if a
+number here is challenged.
+
 ### The chimera threshold, and why it moved
 
 The original analysis proposed failing above 1.0% chimeric pairs, on the
