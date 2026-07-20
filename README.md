@@ -101,10 +101,10 @@ See `docs/METHODS.md` for how every number above was chosen.
 
 | File | Purpose |
 |---|---|
-| `preflightQC.txt` | Console transcript, verdict first, worst first |
-| `preflightQC.html` | Standalone report with reference ranges and per-sample cards |
-| `preflightQC_samples.tsv` | One row per sample, for trend tracking |
-| `preflightQC_pairs.tsv` | One row per inferred tumor/normal pair |
+| `wgsTriage.txt` | Console transcript, verdict first, worst first |
+| `wgsTriage.html` | Standalone report with reference ranges and per-sample cards |
+| `wgsTriage_samples.tsv` | One row per sample, for trend tracking |
+| `wgsTriage_pairs.tsv` | One row per inferred tumor/normal pair |
 
 The HTML contains plain-language failure cards intended to be sent to the data
 provider. They carry no technical vocabulary and make no claim about cause.

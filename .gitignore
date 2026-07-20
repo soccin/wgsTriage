@@ -14,8 +14,17 @@ data/background/*
 
 # Generated reports. These carry real sample names, so they are excluded both
 # by output-directory convention and by filename, whatever --out is set to.
-preflight*/
 wgsTriage_out/
+wgsTriage.txt
+wgsTriage.html
+wgsTriage_samples.tsv
+wgsTriage_pairs.tsv
+
+# The pre-rename names. Kept, not replaced: reports written before the rename
+# are still on disk in working copies, and dropping these rules would expose
+# name-bearing files that were ignored yesterday. Remove once no such report
+# survives anywhere.
+preflight*/
 preflightQC.txt
 preflightQC.html
 preflightQC_samples.tsv

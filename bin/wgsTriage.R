@@ -67,16 +67,16 @@ Options:
                          Default: <repoRoot>/data/background
                          If missing, the filters still run but on fixed
                          thresholds only, with no out-of-range detection.
-  --out <OutDir>         Directory for the report. Default: ./preflight
+  --out <OutDir>         Directory for the report. Default: ./wgsTriage_out
   --project <Name>       Label shown in the report.
                          Default: the directory containing <MapDir>.
   -h, --help             Show this message and exit.
 
 Writes into <OutDir>:
-  preflightQC.txt          the console report, as text
-  preflightQC.html         the same report, formatted
-  preflightQC_samples.tsv  per-sample metrics and verdicts
-  preflightQC_pairs.tsv    per tumor/normal pair verdicts
+  wgsTriage.txt          the console report, as text
+  wgsTriage.html         the same report, formatted
+  wgsTriage_samples.tsv  per-sample metrics and verdicts
+  wgsTriage_pairs.tsv    per tumor/normal pair verdicts
 
 All four carry real sample names and are gitignored.
 
@@ -113,7 +113,7 @@ if (!dir_exists(mapDir)) {
 }
 
 backgroundDir <- getOpt("--background", defaultBackground)
-outDir <- getOpt("--out", "preflight")
+outDir <- getOpt("--out", "wgsTriage_out")
 projectName <- getOpt("--project", path_file(path_real(path(mapDir, ".."))))
 dir_create(outDir)
 
@@ -498,7 +498,7 @@ addRaw(rule)
 
 consoleText <- as.character(L)
 walk(consoleText, \(x) cat(x, "\n", sep = ""))
-write_lines(consoleText, path(outDir, "preflightQC.txt"))
+write_lines(consoleText, path(outDir, "wgsTriage.txt"))
 
 ##
 ## Machine readable output, per section 7.5. Accumulating these is what turns
@@ -514,8 +514,8 @@ tsvOut <- dat |>
                     "meanReadLength", "meanAlignedLength", "chimeraFold", "suppFold"))) |>
     arrange(verdict != "FAIL", desc(pctChimeras))
 
-write_tsv(tsvOut, path(outDir, "preflightQC_samples.tsv"))
-write_tsv(pairs, path(outDir, "preflightQC_pairs.tsv"))
+write_tsv(tsvOut, path(outDir, "wgsTriage_samples.tsv"))
+write_tsv(pairs, path(outDir, "wgsTriage_pairs.tsv"))
 
 ##
 ## HTML report.
@@ -785,13 +785,13 @@ Coverage floors ({COVERAGE_WARN[["N"]]}x normal, {COVERAGE_WARN[["T"]]}x tumor) 
 </html>
 ', .open = "{", .close = "}")
 
-write_lines(html, path(outDir, "preflightQC.html"))
+write_lines(html, path(outDir, "wgsTriage.html"))
 
 cat("\n")
-cat(sprintf("  Wrote %s\n", path(outDir, "preflightQC.txt")))
-cat(sprintf("  Wrote %s\n", path(outDir, "preflightQC.html")))
-cat(sprintf("  Wrote %s\n", path(outDir, "preflightQC_samples.tsv")))
-cat(sprintf("  Wrote %s\n", path(outDir, "preflightQC_pairs.tsv")))
+cat(sprintf("  Wrote %s\n", path(outDir, "wgsTriage.txt")))
+cat(sprintf("  Wrote %s\n", path(outDir, "wgsTriage.html")))
+cat(sprintf("  Wrote %s\n", path(outDir, "wgsTriage_samples.tsv")))
+cat(sprintf("  Wrote %s\n", path(outDir, "wgsTriage_pairs.tsv")))
 
 ## Advisory by decision: always exit 0. See the header comment.
 quit(status = 0)
