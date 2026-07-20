@@ -322,11 +322,22 @@ Not in v1, and each is a line in `TODO_260719.md` rather than a gap in the plan:
 
 ---
 
-## 8. One thing to say out loud in that conversation
+## 8. What to report
 
-The tool finds 23 defective samples in `ReMap_260130`, a cohort that predates
-Proj_16840_N. That is not a comfortable fact, but it is the argument. The
-measurement was always available in files the pipeline already wrote; what was
-missing was anything that looked at them and said no. This repo is that thing,
-it validates cleanly against a known-good cohort, and it would have caught both
-incidents before compute was committed.
+Run over the archive, the tool flags 23 samples in `ReMap_260130`. That cohort
+predates Proj_16840_N, so the same defect was present before the incident that
+prompted this work, and nothing caught it at the time.
+
+Every number the tool uses was already in files the pipeline wrote. It measures
+nothing new. What was missing was a step that read those files and stopped.
+
+Current results: 10 of 16 samples fail in Proj_16840_N, 0 of 11 in
+Proj_17495_I, 0 of 96 in Proj_17608, 23 of 268 in ReMap_260130.
+
+What we do not know: whether the 23 ReMap_260130 samples were analysed and what
+was done with the results; what causes the defect, since the tool measures the
+sequence data and not the process that produced it. The thresholds come from two
+cohorts plus the archive and will move as more data accumulates.
+`pctReadUsed` has no archive backing at all (0 of 454 samples carry it), so its
+95/98 cutoffs are set from current data only and are the least tested of the
+seven.
