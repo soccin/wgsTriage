@@ -20,16 +20,6 @@ wgsTriage.html
 wgsTriage_samples.tsv
 wgsTriage_pairs.tsv
 
-# The pre-rename names. Kept, not replaced: reports written before the rename
-# are still on disk in working copies, and dropping these rules would expose
-# name-bearing files that were ignored yesterday. Remove once no such report
-# survives anywhere.
-preflight*/
-preflightQC.txt
-preflightQC.html
-preflightQC_samples.tsv
-preflightQC_pairs.tsv
-
 # The source archive is large and name-bearing; it is never part of the repo.
 QCData/
 
