@@ -89,6 +89,42 @@ COVERAGE_WARN <- c(N = 30, T = 80, unknown = 80)
 INSERT_RATIO_FAIL <- 1.5
 
 ##
+## Field level provenance for every quantity the HTML report puts in front of a
+## reader. The report is evidence shown to the group that produced the data, so
+## each number has to name the file and the field it came from and the
+## arithmetic applied to it. A number that cannot be traced to a named field is
+## a number the other side can dismiss.
+##
+## `sourceTool` names the program rather than the file suffix. `.asm.txt` and
+## `.wgs.txt` are local conventions and mean nothing to the person opening the
+## file at the other end.
+##
+## `label` is deliberately empty for the gated metrics. Their headings come from
+## THRESHOLDS, and from the coverage row assembled in bin/wgsTriage.R, at render
+## time -- repeating them here is how the glossary and the table above it drift
+## apart. Only the quantities that appear in the report without being gated
+## carry a label in this table.
+##
+## `derived` marks a value computed here rather than read from a field. It is a
+## statement of how the number was made, not a caveat on it: a derived value is
+## the only kind that can say what no single field says.
+##
+PROVENANCE <- tribble(
+    ~metric,              ~label,                ~sourceTool,                             ~sourceFile,                     ~fields,                                            ~transform,                                                ~derived,
+    "pctChimeras",        NA,                    "Picard CollectAlignmentSummaryMetrics", "<sample>.asm.txt, PAIR row",    "PCT_CHIMERAS",                                     "x 100",                                                   FALSE,
+    "supplementaryRate",  NA,                    "samtools stats, via multiqc",           "multiqc_samtools_stats.txt",    "supplementary_alignments, raw_total_sequences",     "supplementary_alignments / raw_total_sequences x 100",     TRUE,
+    "pctSoftclip",        NA,                    "Picard CollectAlignmentSummaryMetrics", "<sample>.asm.txt, PAIR row",    "PCT_SOFTCLIP",                                     "x 100",                                                   FALSE,
+    "pctReadUsed",        NA,                    "Picard CollectAlignmentSummaryMetrics", "<sample>.asm.txt, PAIR row",    "MEAN_ALIGNED_READ_LENGTH, MEAN_READ_LENGTH",       "MEAN_ALIGNED_READ_LENGTH / MEAN_READ_LENGTH x 100",       TRUE,
+    "pctProperlyPaired",  NA,                    "samtools stats, via multiqc",           "multiqc_samtools_stats.txt",    "reads_properly_paired_percent",                    "none, already a percentage",                              FALSE,
+    "pctExcOverlap",      NA,                    "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_OVERLAP",                                  "x 100",                                                   FALSE,
+    "pctExcTotal",        NA,                    "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_TOTAL",                                    "x 100",                                                   FALSE,
+    "meanCoverage",       NA,                    "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "MEAN_COVERAGE",                                    "none",                                                    FALSE,
+    "insertSizeAverage",  "Insert T / Insert N", "samtools stats, via multiqc",           "multiqc_samtools_stats.txt",    "insert_size_average",                              "none",                                                    FALSE,
+    "insertRatio",        "Ratio",               "computed by wgsTriage",                 NA,                              "insertSizeAverage, tumor and normal of one patient", "larger / smaller",                                       TRUE,
+    "sampleType",         "T/N",                 "computed by wgsTriage",                 NA,                              "sample name",                                      "regex on the trailing N / T token, else unknown",          TRUE,
+    "patient",            "Patient",             "computed by wgsTriage",                 NA,                              "sample name",                                      "sample name with the trailing N / T token removed",        TRUE)
+
+##
 ## Picard metrics files carry '#' comment headers, then a '## METRICS CLASS'
 ## line, then a header row, then data rows, then a blank line, then optionally a
 ## '## HISTOGRAM' block. Parse structurally. Line offsets are not stable across

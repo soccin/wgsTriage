@@ -675,6 +675,42 @@ thresholdRows <- usableThresholds |>
     str_c(collapse = "\n")
 
 ##
+## Glossary rows.
+##
+## Headings come from the checks that were actually applied -- usableThresholds
+## via thresholdResults, plus the coverage row appended to it -- and the file,
+## field and arithmetic come from PROVENANCE. Generating it this way is what
+## keeps the glossary describing the report above it rather than an earlier
+## version of it: a threshold dropped for want of data disappears from both
+## tables at once, and a relabelled metric is relabelled in both.
+##
+## Quantities that appear in the report without being gated (insert size, the
+## pair ratio, the T/N and patient columns) carry their heading in PROVENANCE,
+## since there is no threshold row to take it from.
+##
+gatedLabels <- thresholdResults |> distinct(metric, label)
+
+glossaryRows <- PROVENANCE |>
+    left_join(gatedLabels, by = "metric", suffix = c("", "Applied")) |>
+    mutate(label = coalesce(labelApplied, label)) |>
+    ## A metric with no label from either source is one this cohort has no data
+    ## for, so the report above does not show it and the glossary does not
+    ## explain it.
+    filter(!is.na(label)) |>
+    mutate(r = pmap_chr(list(label, metric, sourceTool, sourceFile, fields, transform, derived),
+        \(lab, m, tool, file, fld, tr, drv) {
+            fileTxt <- if (is.na(file)) "" else glue('<span class="r">{esc(file)}</span>')
+            trTxt <- if (drv) glue('<b>derived</b> &middot; {esc(tr)}') else esc(tr)
+            glue('<tr><td data-label="Report label">{esc(lab)}</td>',
+                 '<td data-label="Internal name"><code>{esc(m)}</code></td>',
+                 '<td data-label="Source">{esc(tool)}{fileTxt}</td>',
+                 '<td data-label="Field(s)"><code>{esc(fld)}</code></td>',
+                 '<td data-label="Transform">{trTxt}</td></tr>')
+        })) |>
+    pull(r) |>
+    str_c(collapse = "\n")
+
+##
 ## Stylesheet. Held outside the glue template because it is entirely static and
 ## every literal brace would otherwise have to be doubled, which is how a
 ## stylesheet acquires a syntax error nobody can see.
@@ -902,6 +938,33 @@ and unlike the SV caller it fails silently rather than crashing.</p>
 threshold fires, since these metrics move together under genuine degradation.
 Coverage below {COVERAGE_WARN[["N"]]}x for a normal or {COVERAGE_WARN[["T"]]}x for a tumor warns and counts toward that total;
 a sample whose class could not be read from its name is held to the tumor floor.</p>
+
+<h2>Where each number comes from</h2>
+<p class="meta">The three files read are
+<code>&lt;MapDir&gt;/out/metrics/&lt;sample&gt;/&lt;sample&gt;.asm.txt</code>,
+<code>&lt;MapDir&gt;/out/metrics/&lt;sample&gt;/&lt;sample&gt;.wgs.txt</code> and
+<code>&lt;MapDir&gt;/sbam/multiqc/multiqc_data/multiqc_samtools_stats.txt</code>.
+Nothing else is read and nothing is recomputed.</p>
+<table>
+<thead><tr><th>Report label</th><th>Internal name</th><th>Source</th><th>Field(s)</th>
+<th>Transform</th></tr></thead>
+<tbody>
+{glossaryRows}
+</tbody>
+</table>
+<p class="meta">A derived value is computed from the fields listed, by the arithmetic
+shown. <code>pctReadUsed</code> is the percentage of each delivered read that survived
+alignment; no Picard field reports it directly. Its two operands,
+<code>MEAN_ALIGNED_READ_LENGTH</code> and <code>MEAN_READ_LENGTH</code>, are both in the
+alignment summary file.</p>
+<p class="meta"><code>pctReadUsed</code> has no clean-sample reference in the table above.
+Every archived alignment summary file was written by a Picard version predating
+<code>MEAN_ALIGNED_READ_LENGTH</code>, so the metric is judged against its fixed
+threshold alone.</p>
+<p class="meta"><code>wgsTriage_samples.tsv</code> also carries <code>alignedFrac</code>,
+the same quantity as <code>pctReadUsed</code> unscaled: <code>pctReadUsed</code> is
+<code>alignedFrac</code> x 100. Every column of that file and of
+<code>wgsTriage_pairs.tsv</code> is defined in <code>docs/GLOSSARY.md</code>.</p>
 
 </div>
 <script>{scriptBlock}</script>
