@@ -61,7 +61,7 @@ the number 3 is arbitrary. It currently promotes exactly one archive sample
 
 Per your answer, the script always exits 0. Given how strongly the brief was
 worded about stopping bad runs, flagging this so the choice is deliberate. To
-make it blocking, change the final `quit(status = 0)` in `preflightQC.R` to key
+make it blocking, change the final `quit(status = 0)` in `bin/wgsTriage.R` to key
 off `nFail`. One line.
 
 ---
@@ -170,7 +170,7 @@ failure and the one class of problem this gate cannot see.
 
 ### Not wired into the pipeline
 
-`preflightQC.R` is standalone. Where it hooks into `runTempoWGSBam.sh` or as a
+`bin/wgsTriage.R` is standalone. Where it hooks into `runTempoWGSBam.sh` or as a
 Nextflow process was listed as open decision 1 in the handoff and I have not
 touched it. The script takes a Map directory and exits 0, so it can be dropped in
 anywhere between the two stages.
