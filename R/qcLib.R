@@ -51,15 +51,20 @@ suppressPackageStartupMessages({
 ## maximum. Agreement between the two is what makes a FAIL verdict defensible
 ## to someone upstream who does not want to hear it.
 ##
+## `label` is the column heading in the HTML report and nothing else, so it is
+## kept short on purpose: a long heading widens its column past the width of the
+## data under it, and eleven such columns push the table off the screen. The
+## explanation belongs in the sub-heading, which is what PLAIN in bin/wgsTriage.R
+## supplies.
 THRESHOLDS <- tribble(
-    ~metric,               ~label,                             ~units, ~direction, ~fail, ~warn, ~source,
-    "pctChimeras",         "Read pairs split across the genome",   "%",     "high",   5.0,   1.0, "picard_asm",
-    "supplementaryRate",   "Supplementary alignments",             "%",     "high",   1.0,   0.5, "samtools",
-    "pctSoftclip",         "Soft-clipped bases",                   "%",     "high",   5.0,   1.0, "picard_asm",
-    "pctReadUsed",         "Percent of each read used",            "%",     "low",   95.0,  98.0, "picard_asm",
-    "pctProperlyPaired",   "Reads in proper pairs",                "%",     "low",   97.0,  98.5, "samtools",
-    "pctExcOverlap",       "Bases dropped, mate overlap",          "%",     "high",    NA,  10.0, "picard_wgs",
-    "pctExcTotal",         "Bases dropped, all reasons",           "%",     "high",    NA,  35.0, "picard_wgs")
+    ~metric,               ~label,           ~units, ~direction, ~fail, ~warn, ~source,
+    "pctChimeras",         "Split pairs",       "%",     "high",   5.0,   1.0, "picard_asm",
+    "supplementaryRate",   "Multi-mapped",      "%",     "high",   1.0,   0.5, "samtools",
+    "pctSoftclip",         "Clipped bases",     "%",     "high",   5.0,   1.0, "picard_asm",
+    "pctReadUsed",         "Read used",         "%",     "low",   95.0,  98.0, "picard_asm",
+    "pctProperlyPaired",   "Proper pairs",      "%",     "low",   97.0,  98.5, "samtools",
+    "pctExcOverlap",       "Overlap loss",      "%",     "high",    NA,  10.0, "picard_wgs",
+    "pctExcTotal",         "Total loss",        "%",     "high",    NA,  35.0, "picard_wgs")
 
 ## A sample tripping this many warnings is treated as a failure even when no
 ## single threshold fires. These metrics are not independent: genuine degradation

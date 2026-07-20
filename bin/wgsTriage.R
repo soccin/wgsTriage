@@ -293,13 +293,13 @@ PLAIN <- c(
     pctExcTotal = "Bases dropped for all reasons")
 
 ACTION <- c(
-    pctChimeras = "Structural variant calling will fail or produce false positives. Do not run SV analysis on this sample.",
+    pctChimeras = "Structural variant calling will fail or produce false positives.",
     supplementaryRate = "Confirms the split-read finding from a second independent tool.",
-    pctSoftclip = "Alignment is discarding a large fraction of each read. Usable data is far below the delivered figure.",
-    pctReadUsed = "Most of each sequenced read is being thrown away. Effective yield is a fraction of what was billed.",
+    pctSoftclip = "Alignment is discarding a large fraction of each read. Usable data is below the delivered figure.",
+    pctReadUsed = "Most of each sequenced read is discarded at alignment. Effective yield is a fraction of the raw yield.",
     pctProperlyPaired = "Paired-end structure is degraded. Insert size and copy number estimates will be unreliable.",
     pctExcOverlap = "Fragments are shorter than the read length, so mates overlap and are counted once.",
-    pctExcTotal = "Usable coverage is far below raw coverage. Any externally reported depth is overstated.")
+    pctExcTotal = "Usable coverage is below raw coverage. Externally reported depth overstates what is usable.")
 
 ##
 ## Console report.
@@ -325,16 +325,11 @@ verdictLine <- switch(overallVerdict,
 addRaw(verdictLine)
 
 if (nPairs > 0) add("           {nPairFail} of {nPairs} tumor/normal pairs unusable.")
-addRaw(switch(overallVerdict,
-    BLOCK = "           DO NOT RUN THE PIPELINE ON THE FAILED SAMPLES.",
-    INCOMPLETE = "           RESOLVE THE MISSING METRICS BEFORE RUNNING.",
-    REVIEW = "           Review the warnings below before committing compute.",
-    CLEAR = "           Cleared to proceed."))
 addRaw("")
 
 if (nExpected != nChecked) {
     add("  WARNING: {nExpected - nChecked} sample(s) have incomplete metrics and were not")
-    addRaw("  fully assessed. A partial report is worse than no report.")
+    addRaw("  fully assessed.")
     addRaw("")
 }
 
@@ -389,7 +384,7 @@ if (any(dat$lowCoverage)) {
                               coverageFloor, sampleType)) |>
         pull(line) |>
         walk(addRaw)
-    addRaw("  These floors are not yet validated. Treat as a prompt to check, not a verdict.")
+    addRaw("  These floors are not yet validated.")
     addRaw("")
 }
 
@@ -467,26 +462,11 @@ if (nPairs > 0) {
                                   insertSizeAverageNormal, insertRatio)) |>
             pull(line) |>
             walk(addRaw)
-        addRaw("  Copy number calling on these pairs is unreliable and will not")
-        addRaw("  announce itself. Consider a well-matched unmatched normal.")
+        addRaw("  Copy number calling on these pairs is unreliable and does not")
+        addRaw("  fail visibly.")
     }
     addRaw("")
 }
-
-addRaw(thin)
-addRaw("  WHAT TO DO")
-addRaw(thin)
-if (nFail > 0) {
-    addRaw("  1. Do not commit compute to the failed samples.")
-    addRaw("  2. Send the per-sample cards in the HTML report to the data provider.")
-    addRaw("  3. Re-processing the existing data will not fix this. New data is needed.")
-} else if (nWarn > 0) {
-    addRaw("  1. Review the flagged samples against the reference ranges in the HTML.")
-    addRaw("  2. Proceed if the deviations are understood and acceptable.")
-} else {
-    addRaw("  Nothing. The cohort is within expected ranges. Proceed.")
-}
-addRaw("")
 
 if (haveBackground) {
     add("  Reference ranges from {max(refN, na.rm = TRUE)} previously mapped samples.")
@@ -525,6 +505,21 @@ esc <- function(x) {
         str_replace_all(">", "&gt;")
 }
 
+##
+## The Map directory is usually given relative ("../../Map"), which identifies
+## nothing once the report has been mailed away from where it was produced.
+## Resolve it and trim to the first "Users" component, where the informative
+## part of these paths begins. Display only: nothing is resolved from this
+## string, so the relative path stays the one the tool actually reads.
+##
+displayPath <- function(p) {
+    parts <- path_split(path_real(p))[[1]]
+    i <- which(parts == "Users")
+    if (length(i) > 0) path_join(parts[i[1]:length(parts)]) else path_real(p)
+}
+
+sourcePath <- displayPath(mapDir)
+
 statusClass <- function(s) str_c("s", str_to_lower(s))
 
 ## One row of the cohort table: value, reference range, and verdict together.
@@ -533,11 +528,11 @@ metricCells <- function(sampleName) {
     thresholdResults |>
         filter(sample == sampleName) |>
         arrange(match(metric, THRESHOLDS$metric)) |>
-        mutate(cell = pmap_chr(list(metric, value, status, units), \(m, v, s, u) {
+        mutate(cell = pmap_chr(list(metric, value, status, units, label), \(m, v, s, u, lab) {
             ref <- refMedian[m]
             refTxt <- if (is.na(ref)) "no background" else sprintf("norm %.2f%s", ref, u)
             valTxt <- if (is.na(v)) "n/a" else sprintf("%.2f%s", v, u)
-            glue('<td class="{statusClass(s)}"><span class="v">{valTxt}</span>',
+            glue('<td class="{statusClass(s)}" data-label="{esc(lab)}"><span class="v">{valTxt}</span>',
                  '<span class="r">{refTxt}</span></td>')
         })) |>
         pull(cell) |>
@@ -550,9 +545,10 @@ cohortRows <- dat |>
         \(s, t, v, cov, low, floor) {
             covTxt <- if (is.na(cov)) "n/a" else sprintf("%.0fx", cov)
             covRef <- if (is.na(floor)) "" else sprintf("floor %.0fx", floor)
-            glue('<tr><td class="name">{esc(s)}</td><td>{t}</td>',
-                 '<td class="{statusClass(v)} verdict">{v}</td>{metricCells(s)}',
-                 '<td class="{if (isTRUE(low)) "swarn" else "spass"}">',
+            glue('<tr><td class="name" data-label="Sample">{esc(s)}</td>',
+                 '<td data-label="T/N">{t}</td>',
+                 '<td class="{statusClass(v)} verdict" data-label="Verdict">{v}</td>{metricCells(s)}',
+                 '<td class="{if (isTRUE(low)) "swarn" else "spass"}" data-label="Coverage">',
                  '<span class="v">{covTxt}</span><span class="r">{covRef}</span></td></tr>')
         })) |>
     pull(row) |>
@@ -562,7 +558,7 @@ metricHeader <- usableThresholds |>
     mutate(h = glue('<th>{esc(label)}<span class="sub">{esc(PLAIN[metric])}</span></th>')) |>
     pull(h) |>
     str_c(collapse = "") |>
-    str_c('<th>Usable coverage<span class="sub">Depth after quality filtering; advisory floor only</span></th>')
+    str_c('<th>Coverage<span class="sub">Depth after quality filtering; advisory floor only</span></th>')
 
 pairRows <- if (nPairs > 0) {
     pairs |>
@@ -570,16 +566,18 @@ pairRows <- if (nPairs > 0) {
         mutate(row = pmap_chr(list(patient, sampleTumor, sampleNormal, insertSizeAverageTumor,
                                    insertSizeAverageNormal, insertRatio, pairVerdict, pairReason),
             \(p, st, sn, it, inn, ir, v, why) {
-                glue('<tr><td class="name">{esc(p)}</td><td>{esc(st)}</td><td>{esc(sn)}</td>',
-                     '<td>{if (is.na(it)) "n/a" else sprintf("%.0f", it)}</td>',
-                     '<td>{if (is.na(inn)) "n/a" else sprintf("%.0f", inn)}</td>',
-                     '<td>{if (is.na(ir)) "n/a" else sprintf("%.2fx", ir)}</td>',
-                     '<td class="{statusClass(v)} verdict">{v}</td><td>{esc(why)}</td></tr>')
+                glue('<tr><td class="name" data-label="Patient">{esc(p)}</td>',
+                     '<td data-label="Tumor">{esc(st)}</td><td data-label="Normal">{esc(sn)}</td>',
+                     '<td data-label="Insert T">{if (is.na(it)) "n/a" else sprintf("%.0f", it)}</td>',
+                     '<td data-label="Insert N">{if (is.na(inn)) "n/a" else sprintf("%.0f", inn)}</td>',
+                     '<td data-label="Ratio">{if (is.na(ir)) "n/a" else sprintf("%.2fx", ir)}</td>',
+                     '<td class="{statusClass(v)} verdict" data-label="Verdict">{v}</td>',
+                     '<td data-label="Reason">{esc(why)}</td></tr>')
             })) |>
         pull(row) |>
         str_c(collapse = "\n")
 } else {
-    '<tr><td colspan="8">No tumor/normal pairs could be inferred from the sample names.</td></tr>'
+    '<tr><td colspan="8" data-label="Pairs">No tumor/normal pairs could be inferred from the sample names.</td></tr>'
 }
 
 ##
@@ -616,7 +614,7 @@ failureCards <- if (nFail > 0) {
     <tbody>{rows}</tbody>
   </table>
   <p class="lead">Usable coverage after quality filtering: <b>{if (is.na(row$meanCoverage)) "n/a" else sprintf("%.0fx", row$meanCoverage)}</b>.</p>
-  <p class="what">What this means</p>
+  <p class="what">Effect on downstream analysis</p>
   <ul>{actions}</ul>
   <p class="caveat">We can measure what the sequence data looks like, but not what
   produced it. No conclusion is drawn here about sample handling or preparation.</p>
@@ -624,105 +622,204 @@ failureCards <- if (nFail > 0) {
         }) |>
         str_c(collapse = "\n")
 } else {
-    '<p class="lead">No samples failed. Nothing to report to the data provider.</p>'
+    '<p class="lead">No samples failed.</p>'
 }
 
 bannerClass <- switch(overallVerdict, BLOCK = "block", INCOMPLETE = "block",
                       REVIEW = "review", CLEAR = "clear")
 bannerText <- switch(overallVerdict,
-    BLOCK = glue("{nFail} of {nExpected} samples FAILED -- do not run the pipeline on them"),
+    BLOCK = glue("{nFail} of {nExpected} samples FAILED"),
     INCOMPLETE = glue("{nIncomplete} of {nExpected} samples could not be assessed"),
-    REVIEW = glue("{nWarn} of {nExpected} samples need review before committing compute"),
-    CLEAR = glue("All {nExpected} samples passed -- cleared to proceed"))
+    REVIEW = glue("{nWarn} of {nExpected} samples outside reference range"),
+    CLEAR = glue("All {nExpected} samples passed"))
 
 thresholdRows <- usableThresholds |>
-    mutate(r = glue('<tr><td>{esc(label)}</td><td>{esc(PLAIN[metric])}</td>',
-                    '<td class="num">{if_else(is.na(fail), "--", as.character(fail))}{units}</td>',
-                    '<td class="num">{if_else(is.na(warn), "--", as.character(warn))}{units}</td>',
-                    '<td class="num">{if_else(is.na(refMedian[metric]), "n/a", sprintf("%.3f", refMedian[metric]))}</td>',
-                    '<td class="num">{if_else(is.na(refN[metric]), "0", as.character(refN[metric]))}</td></tr>')) |>
+    mutate(r = glue('<tr><td data-label="Metric">{esc(label)}</td>',
+                    '<td data-label="Plain language">{esc(PLAIN[metric])}</td>',
+                    '<td class="num" data-label="Fail">{if_else(is.na(fail), "--", as.character(fail))}{units}</td>',
+                    '<td class="num" data-label="Warn">{if_else(is.na(warn), "--", as.character(warn))}{units}</td>',
+                    '<td class="num" data-label="Clean median">{if_else(is.na(refMedian[metric]), "n/a", sprintf("%.3f", refMedian[metric]))}</td>',
+                    '<td class="num" data-label="Background n">{if_else(is.na(refN[metric]), "0", as.character(refN[metric]))}</td></tr>')) |>
     pull(r) |>
     str_c(collapse = "\n")
 
+##
+## Stylesheet. Held outside the glue template because it is entirely static and
+## every literal brace would otherwise have to be doubled, which is how a
+## stylesheet acquires a syntax error nobody can see.
+##
+## Colours are custom properties so light and dark differ only in the values of
+## one block, not in a duplicate copy of every rule. Light is the default and
+## prefers-color-scheme is deliberately not consulted: this report is a document
+## that gets mailed to a data provider, and one that arrives dark because of the
+## reader's operating system setting is a surprise. The toggle is there for
+## anyone who wants dark.
+##
+styleBlock <- '
+:root {
+  color-scheme: light;
+  --bg: #fbfbfc; --fg: #1a1a1c; --muted: #63636b; --muted2: #71717a;
+  --line: #e2e2e6; --lineSoft: #ececf0; --thBg: #f2f2f5; --cardBg: #fff;
+  --cardLine: #d4d4d8;
+  --failBg: #fdeaea; --failFg: #a5281a; --failBd: #c0392b; --failText: #7f1d13;
+  --warnBg: #fdf5e3; --warnFg: #8a6400; --warnBd: #d19a0a; --warnText: #7a5901;
+  --passBg: #eaf7ee; --passBd: #2e8b4f; --passText: #1c5c33;
+  --missBg: #eeeef2; --missFg: #52525b;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121214; --fg: #e8e8ea; --muted: #a1a1aa; --muted2: #a1a1aa;
+  --line: #2c2c32; --lineSoft: #2c2c32; --thBg: #1d1d21; --cardBg: #18181b;
+  --cardLine: #3f3f46;
+  --failBg: #3b1614; --failFg: #ffb4a8; --failBd: #e05545; --failText: #ffb4a8;
+  --warnBg: #3a2e10; --warnFg: #f5cf6a; --warnBd: #d19a0a; --warnText: #f5cf6a;
+  --passBg: #12301d; --passBd: #3fa564; --passText: #92dca9;
+  --missBg: #26262b; --missFg: #a1a1aa;
+}
+* { box-sizing: border-box; }
+body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  margin: 0; padding: 2rem 1.25rem 4rem; background: var(--bg); color: var(--fg); }
+.wrap { max-width: 1180px; margin: 0 auto; }
+h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.15rem; margin: 2.5rem 0 .75rem; padding-bottom: .35rem;
+  border-bottom: 1px solid var(--line); }
+h3 { font-size: 1rem; margin: 0 0 .5rem; }
+.meta { color: var(--muted); font-size: .875rem; margin-bottom: 1.25rem; }
+.head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.themeToggle { flex: none; font: inherit; font-size: .8125rem; cursor: pointer;
+  background: var(--thBg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 6px; padding: .35rem .7rem; }
+.themeToggle:hover { border-color: var(--muted); }
+.banner { padding: 1rem 1.25rem; border-radius: 8px; font-weight: 600; font-size: 1.05rem;
+  margin: 1rem 0 1.5rem; border-left: 5px solid; }
+.banner.block { background: var(--failBg); border-color: var(--failBd); color: var(--failText); }
+.banner.review { background: var(--warnBg); border-color: var(--warnBd); color: var(--warnText); }
+.banner.clear { background: var(--passBg); border-color: var(--passBd); color: var(--passText); }
+.counts { display: flex; flex-wrap: wrap; gap: 1.5rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+.counts li { font-size: .875rem; color: var(--muted); }
+.counts b { display: block; font-size: 1.5rem; color: var(--fg); font-weight: 650; }
+table { border-collapse: collapse; width: 100%; font-size: .8125rem; table-layout: auto; }
+th, td { padding: .45rem .55rem; text-align: left; border-bottom: 1px solid var(--lineSoft);
+  vertical-align: top; }
+th { background: var(--thBg); font-weight: 600; font-size: .75rem; }
+th .sub { display: block; font-weight: 400; color: var(--muted2); font-size: .6875rem;
+  max-width: 9rem; }
+/*
+ * Sample names are one unbreakable token. break-all split them mid-name
+ * (APTL_MDA009_ / N01) because it also tells the auto table layout the column
+ * can shrink to a single character. nowrap makes the longest name set the
+ * column width instead; min-width keeps it off the neighbouring column.
+ */
+td.name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600;
+  white-space: nowrap; min-width: 9.5rem; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.v { display: block; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.r { display: block; font-size: .6875rem; color: var(--muted2); }
+.verdict { font-weight: 700; font-size: .75rem; letter-spacing: .02em; }
+.sfail { background: var(--failBg); color: var(--failFg); }
+.swarn { background: var(--warnBg); color: var(--warnFg); }
+.spass { background: transparent; }
+.smissing, .sincomplete { background: var(--missBg); color: var(--missFg); }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem; background: var(--cardBg); }
+.cardtable { margin: .5rem 0 .85rem; font-size: .8125rem; }
+.cardtable th { background: transparent; border-bottom: 1px solid var(--cardLine); }
+.lead { margin: .35rem 0; }
+.what { font-weight: 600; margin: .75rem 0 .25rem; }
+.card ul { margin: .25rem 0 .5rem; padding-left: 1.2rem; }
+.card li { margin-bottom: .25rem; }
+.caveat { font-size: .8125rem; color: var(--muted2); border-top: 1px solid var(--lineSoft);
+  padding-top: .6rem; margin-top: .75rem; }
+.note { background: var(--thBg); border-radius: 6px; padding: .75rem 1rem; font-size: .875rem;
+  margin: 1rem 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8125rem;
+  word-break: break-all; }
+
+/*
+ * Narrow screens: every table becomes one block per row, each cell labelled
+ * from its data-label. The tables are never allowed to scroll sideways --
+ * a browser gives no hint that a table continues past the edge, so anything
+ * out there is simply lost.
+ */
+@media (max-width: 980px) {
+  thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  table, tbody, tr, td { display: block; width: 100%; }
+  tr { border: 1px solid var(--line); border-radius: 8px; margin-bottom: .75rem;
+    padding: .25rem .6rem; }
+  td { border-bottom: 1px solid var(--lineSoft); padding: .45rem .1rem; }
+  tr td:last-child { border-bottom: 0; }
+  td::before { content: attr(data-label); display: block; font-size: .6875rem;
+    font-weight: 600; color: var(--muted2); text-transform: uppercase;
+    letter-spacing: .03em; }
+  td.num { text-align: left; }
+  /* The column no longer exists here, so nothing needs to be held open --
+     and a nowrap name is exactly what would push a phone sideways. */
+  td.name { white-space: normal; overflow-wrap: break-word; min-width: 0; }
+  .counts { gap: 1rem; }
+}
+
+/*
+ * Print. The failure cards are meant to be sent to a data provider, so the
+ * status colours have to survive the trip: they are the whole point of the
+ * page and a greyscale FAIL is just a number.
+ */
+@media print {
+  :root { color-scheme: light; }
+  body { background: #fff; padding: 0; font-size: 11pt; }
+  .themeToggle { display: none; }
+  .banner, .sfail, .swarn, .smissing, .sincomplete, th, .note {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .card, tr, .note { break-inside: avoid; page-break-inside: avoid; }
+  h2 { break-after: avoid; page-break-after: avoid; }
+  a[href]::after { content: ""; }
+}
+'
+
+##
+## Theme toggle. Light unless the reader asks otherwise; the choice is
+## remembered per browser. localStorage throws on a file:// page in some
+## browsers, which is why both halves are wrapped -- a failure there costs the
+## reader a remembered preference, not a working button.
+##
+scriptBlock <- '
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById("themeToggle");
+  var saved = null;
+  try { saved = localStorage.getItem("wgsTriageTheme"); } catch (e) {}
+  if (saved === "dark" || saved === "light") root.setAttribute("data-theme", saved);
+  function label() {
+    btn.textContent = root.getAttribute("data-theme") === "dark" ? "Light mode" : "Dark mode";
+  }
+  label();
+  btn.addEventListener("click", function () {
+    var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("wgsTriageTheme", next); } catch (e) {}
+    label();
+  });
+})();
+'
+
 html <- glue('<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pre-flight QC -- {esc(projectName)}</title>
 <style>
-:root {{ color-scheme: light dark; }}
-* {{ box-sizing: border-box; }}
-body {{ font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  margin: 0; padding: 2rem 1.25rem 4rem; background: #fbfbfc; color: #1a1a1c; }}
-.wrap {{ max-width: 1180px; margin: 0 auto; }}
-h1 {{ font-size: 1.5rem; margin: 0 0 .25rem; }}
-h2 {{ font-size: 1.15rem; margin: 2.5rem 0 .75rem; padding-bottom: .35rem;
-  border-bottom: 1px solid #e2e2e6; }}
-h3 {{ font-size: 1rem; margin: 0 0 .5rem; }}
-.meta {{ color: #63636b; font-size: .875rem; margin-bottom: 1.25rem; }}
-.banner {{ padding: 1rem 1.25rem; border-radius: 8px; font-weight: 600; font-size: 1.05rem;
-  margin: 1rem 0 1.5rem; border-left: 5px solid; }}
-.banner.block {{ background: #fdeaea; border-color: #c0392b; color: #7f1d13; }}
-.banner.review {{ background: #fdf5e3; border-color: #d19a0a; color: #7a5901; }}
-.banner.clear {{ background: #eaf7ee; border-color: #2e8b4f; color: #1c5c33; }}
-.counts {{ display: flex; flex-wrap: wrap; gap: 1.5rem; margin: 0 0 1rem; padding: 0; list-style: none; }}
-.counts li {{ font-size: .875rem; color: #63636b; }}
-.counts b {{ display: block; font-size: 1.5rem; color: #1a1a1c; font-weight: 650; }}
-.scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
-table {{ border-collapse: collapse; width: 100%; font-size: .8125rem; }}
-th, td {{ padding: .45rem .55rem; text-align: left; border-bottom: 1px solid #ececf0;
-  vertical-align: top; white-space: nowrap; }}
-th {{ background: #f2f2f5; font-weight: 600; font-size: .75rem; }}
-th .sub {{ display: block; font-weight: 400; color: #71717a; font-size: .6875rem;
-  white-space: normal; max-width: 12rem; }}
-td.name {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }}
-td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
-.v {{ display: block; font-variant-numeric: tabular-nums; font-weight: 600; }}
-.r {{ display: block; font-size: .6875rem; color: #71717a; }}
-.verdict {{ font-weight: 700; font-size: .75rem; letter-spacing: .02em; }}
-.sfail {{ background: #fdeaea; color: #a5281a; }}
-.swarn {{ background: #fdf5e3; color: #8a6400; }}
-.spass {{ background: transparent; }}
-.smissing, .sincomplete {{ background: #eeeef2; color: #52525b; }}
-.card {{ border: 1px solid #e2e2e6; border-radius: 8px; padding: 1.1rem 1.25rem;
-  margin-bottom: 1rem; background: #fff; }}
-.cardtable {{ margin: .5rem 0 .85rem; font-size: .8125rem; }}
-.cardtable th {{ background: transparent; border-bottom: 1px solid #d4d4d8; }}
-.lead {{ margin: .35rem 0; }}
-.what {{ font-weight: 600; margin: .75rem 0 .25rem; }}
-.card ul {{ margin: .25rem 0 .5rem; padding-left: 1.2rem; }}
-.card li {{ margin-bottom: .25rem; }}
-.caveat {{ font-size: .8125rem; color: #71717a; border-top: 1px solid #ececf0;
-  padding-top: .6rem; margin-top: .75rem; }}
-.note {{ background: #f2f2f5; border-radius: 6px; padding: .75rem 1rem; font-size: .875rem;
-  margin: 1rem 0; }}
-code {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8125rem; }}
-@media (prefers-color-scheme: dark) {{
-  body {{ background: #121214; color: #e8e8ea; }}
-  h2 {{ border-color: #2c2c32; }}
-  .meta, .counts li, .r, th .sub, .caveat {{ color: #a1a1aa; }}
-  .counts b {{ color: #e8e8ea; }}
-  th {{ background: #1d1d21; }}
-  th, td {{ border-color: #2c2c32; }}
-  .banner.block {{ background: #3b1614; border-color: #e05545; color: #ffb4a8; }}
-  .banner.review {{ background: #3a2e10; border-color: #d19a0a; color: #f5cf6a; }}
-  .banner.clear {{ background: #12301d; border-color: #3fa564; color: #92dca9; }}
-  .sfail {{ background: #3b1614; color: #ffb4a8; }}
-  .swarn {{ background: #3a2e10; color: #f5cf6a; }}
-  .smissing, .sincomplete {{ background: #26262b; color: #a1a1aa; }}
-  .card {{ background: #18181b; border-color: #2c2c32; }}
-  .cardtable th {{ border-color: #3f3f46; }}
-  .note {{ background: #1d1d21; }}
-}}
+{styleBlock}
 </style>
 </head>
 <body>
 <div class="wrap">
 
+<div class="head">
 <h1>BAM pre-flight QC</h1>
-<p class="meta">Project <b>{esc(projectName)}</b> &nbsp;|&nbsp; {nChecked} of {nExpected} samples checked
- &nbsp;|&nbsp; {Sys.Date()} &nbsp;|&nbsp; source: <code>{esc(mapDir)}</code></p>
+<button type="button" id="themeToggle" class="themeToggle">Dark mode</button>
+</div>
+<p class="meta">Project <b>{esc(projectName)}</b> &nbsp;|&nbsp; source: <code>{esc(sourcePath)}</code><br>{nChecked} of {nExpected} samples checked<br>{Sys.Date()} &nbsp;|&nbsp; wgsTriage {WGSTRIAGE_VERSION}</p>
 
 <div class="banner {bannerClass}">{bannerText}</div>
 
@@ -735,25 +832,22 @@ code {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 
   <li><b>{nPairFail} / {nPairs}</b>pairs unusable</li>
 </ul>
 
-{if (nExpected != nChecked) glue(\'<div class="note"><b>Cohort is incomplete.</b> {nExpected - nChecked} sample(s) are missing metrics and were not fully assessed. A report covering a subset is how the original investigation reached a wrong conclusion.</div>\') else ""}
+{if (nExpected != nChecked) glue(\'<div class="note"><b>Cohort is incomplete.</b> {nExpected - nChecked} sample(s) are missing metrics and were not fully assessed.</div>\') else ""}
 {if (nrow(droppedThresholds) > 0) glue(\'<div class="note"><b>Reduced check set.</b> {nrow(droppedThresholds)} filter threshold(s) were not evaluated because this cohort carries no data for them: <code>{str_c(droppedThresholds$metric, collapse = ", ")}</code>.{if ("samtools" %in% droppedSources) " Without samtools metrics there is no independent confirmation of the Picard result, so every verdict below rests on a single tool." else ""}</div>\') else ""}
 
 <h2>Cohort</h2>
 <p class="meta">Worst first. Each cell shows the measured value above the clean-sample reference.</p>
-<div class="scroll">
 <table>
 <thead><tr><th>Sample</th><th>T/N</th><th>Verdict</th>{metricHeader}</tr></thead>
 <tbody>
 {cohortRows}
 </tbody>
 </table>
-</div>
 
 <h2>Tumor / normal pairs</h2>
 <p class="meta">Pairing is inferred from sample names. Two samples can each pass on their
 own and still be unusable together: Facets needs comparable insert size distributions,
 and unlike the SV caller it fails silently rather than crashing.</p>
-<div class="scroll">
 <table>
 <thead><tr><th>Patient</th><th>Tumor</th><th>Normal</th><th>Insert T</th><th>Insert N</th>
 <th>Ratio</th><th>Verdict</th><th>Reason</th></tr></thead>
@@ -761,13 +855,11 @@ and unlike the SV caller it fails silently rather than crashing.</p>
 {pairRows}
 </tbody>
 </table>
-</div>
 
 <h2>Per-sample detail for the data provider</h2>
 {failureCards}
 
 <h2>Thresholds applied</h2>
-<div class="scroll">
 <table>
 <thead><tr><th>Metric</th><th>Plain language</th><th>Fail</th><th>Warn</th>
 <th>Clean median</th><th>Background n</th></tr></thead>
@@ -775,12 +867,12 @@ and unlike the SV caller it fails silently rather than crashing.</p>
 {thresholdRows}
 </tbody>
 </table>
-</div>
 <p class="meta">A sample tripping {WARN_ESCALATION} or more warnings at once is failed even when no single
 threshold fires, since these metrics move together under genuine degradation.
 Coverage floors ({COVERAGE_WARN[["N"]]}x normal, {COVERAGE_WARN[["T"]]}x tumor) are advisory and not yet validated.</p>
 
 </div>
+<script>{scriptBlock}</script>
 </body>
 </html>
 ', .open = "{", .close = "}")
