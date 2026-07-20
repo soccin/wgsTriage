@@ -1,5 +1,9 @@
 # Methods
 
+Thresholds as of `wgsTriage` 0.9.0. Any report produced by a different version
+may have been judged against different numbers; `--help` prints the version of
+the tool that wrote it.
+
 How `wgsTriage` decides that a sample is unusable, and why each number is what
 it is. Every threshold here was set against an archive of previously mapped
 projects rather than chosen in the abstract, and the observed ranges that

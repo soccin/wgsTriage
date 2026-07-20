@@ -1,4 +1,4 @@
-# wgsTriage
+# wgsTriage 0.9.0
 
 A post-mapping QC filter for WGS cohorts. It reads only what the Map stage
 already wrote to disk, computes nothing new, and renders a verdict per sample
@@ -27,8 +27,9 @@ tests/testThresholds.R      smoke test over synthetic fixtures
 
 ## Usage
 
-Both scripts answer `--help` with a full description. They resolve their own
-location, so they can be run from any working directory.
+Both scripts answer `--help` with a full description, and report the version in
+the first line of that output. They resolve their own location, so they can be
+run from any working directory.
 
 Assess a project:
 
@@ -140,3 +141,10 @@ Only aggregate statistics are committed. The per-sample background carries
 names and stays out of the repository until it is anonymised.
 
 See `docs/DECISIONS.md` for open questions and unvalidated assumptions.
+
+## Version
+
+0.9.0. Defined once as `WGSTRIAGE_VERSION` in `R/qcLib.R` and reported by both
+scripts under `--help`. The version tracks the thresholds: a report can be
+traced back to the threshold set that produced it, so bump it whenever a
+threshold in `R/qcLib.R` moves.

@@ -12,6 +12,12 @@
 ## Proj_16840_N, which produced a materially wrong conclusion.
 ##
 
+##
+## Single source of truth for the version. Reported by --help so a report can
+## be traced back to the threshold set that produced it.
+##
+WGSTRIAGE_VERSION <- "0.9.0"
+
 suppressPackageStartupMessages({
     library(tidyverse)
     library(fs)

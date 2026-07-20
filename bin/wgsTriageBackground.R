@@ -40,8 +40,8 @@ defaultOut <- path(repoRoot, "data", "background")
 
 usage <- function() {
     glue("
-wgsTriageBackground.R -- build the background QC distribution that gives
-wgsTriage.R its historical reference ranges.
+wgsTriageBackground.R {WGSTRIAGE_VERSION} -- build the background QC
+distribution that gives wgsTriage.R its historical reference ranges.
 
 Usage:
   Rscript bin/wgsTriageBackground.R <QCDir> [--out <OutDir>]
