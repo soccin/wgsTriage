@@ -84,8 +84,10 @@ A sample tripping three or more warnings at once is failed even when no single
 threshold fires, because these metrics are not independent and move together
 under genuine degradation.
 
-Coverage floors, 25x for normals and 50x for tumors, are advisory and reported
-in a separate block. They are not validated and are never a verdict.
+Coverage floors are 30x for normals and 80x for tumors. A sample whose class
+cannot be read from its name is held to the tumor floor. Falling below the
+floor raises a warning, which counts toward the three above; coverage alone
+never fails a sample.
 
 Pair checks are separate. A pair fails if either member fails, or if the tumor
 and normal insert size distributions differ by more than 1.5x. Two samples can
@@ -101,10 +103,10 @@ See `docs/METHODS.md` for how every number above was chosen.
 
 | File | Purpose |
 |---|---|
-| `preflightQC.txt` | Console transcript, verdict first, worst first |
-| `preflightQC.html` | Standalone report with reference ranges and per-sample cards |
-| `preflightQC_samples.tsv` | One row per sample, for trend tracking |
-| `preflightQC_pairs.tsv` | One row per inferred tumor/normal pair |
+| `wgsTriage.txt` | Console transcript, verdict first, worst first |
+| `wgsTriage.html` | Standalone report with reference ranges and per-sample cards |
+| `wgsTriage_samples.tsv` | One row per sample, for trend tracking |
+| `wgsTriage_pairs.tsv` | One row per inferred tumor/normal pair |
 
 The HTML contains plain-language failure cards intended to be sent to the data
 provider. They carry no technical vocabulary and make no claim about cause.

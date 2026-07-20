@@ -14,12 +14,11 @@ data/background/*
 
 # Generated reports. These carry real sample names, so they are excluded both
 # by output-directory convention and by filename, whatever --out is set to.
-preflight*/
 wgsTriage_out/
-preflightQC.txt
-preflightQC.html
-preflightQC_samples.tsv
-preflightQC_pairs.tsv
+wgsTriage.txt
+wgsTriage.html
+wgsTriage_samples.tsv
+wgsTriage_pairs.tsv
 
 # The source archive is large and name-bearing; it is never part of the repo.
 QCData/

@@ -151,11 +151,22 @@ so there is no observed defective distribution for those metrics. The thresholds
 are anchored on the clean range plus a wide margin rather than on separation
 between two observed populations.
 
-### Coverage floors are invented
+### Coverage floors are chosen, not derived
 
-25x normal, 50x tumor. Section 5.8 flags these as untested and they still are.
-Reported as an advisory block, never as a gate. They currently flag four samples
-in Proj_16840_N, all of which fail on other grounds anyway.
+Values settled 2026-07-20: 30x normal, 80x tumor, 80x where the class cannot be
+read from the name. They now warn on the verdict and count toward the
+three-warning escalation, replacing the 25x/50x advisory block I invented.
+
+What remains a gap is the basis. These are the depths NS considers adequate,
+not thresholds separating two observed populations the way the chimera
+threshold does. The archive can say how often a floor fires but not whether the
+figure is right, because it holds no record of which samples were later found
+too shallow to analyse.
+
+Adopting them moved no verdicts: seven samples in Proj_16840_N fall below floor
+and all seven already failed, and no archived sample gains a third warning from
+the check. They fire on 12.2% of the 401 archived samples carrying a coverage
+figure, against 1.0% before. See `docs/METHODS.md` section 5.
 
 ### The 1.5x insert ratio is unconfirmed
 

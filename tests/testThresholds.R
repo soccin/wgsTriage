@@ -74,7 +74,7 @@ status <- system2("Rscript",
 cat("\n")
 check("exit status is 0", status == 0)
 
-samplesFile <- path(outDir, "preflightQC_samples.tsv")
+samplesFile <- path(outDir, "wgsTriage_samples.tsv")
 if (!file_exists(samplesFile)) {
     cat("\n  No sample report written. Tool output follows:\n\n", sep = "")
     walk(read_lines(runLog), \(x) cat("  ", x, "\n", sep = ""))
@@ -82,7 +82,7 @@ if (!file_exists(samplesFile)) {
 }
 
 samples <- read_tsv(samplesFile, show_col_types = FALSE, progress = FALSE)
-report <- read_lines(path(outDir, "preflightQC.txt"), progress = FALSE)
+report <- read_lines(path(outDir, "wgsTriage.txt"), progress = FALSE)
 
 verdictOf <- function(name) {
     samples |> filter(sample == name) |> pull(verdict)
