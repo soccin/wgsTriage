@@ -23,9 +23,11 @@ R/qcLib.R                   shared parsing and filter threshold logic
 data/background/            generated reference ranges, aggregate only
 docs/METHODS.md             how the thresholds were set, and why
 docs/DECISIONS.md           what was chosen, and what is still unvalidated
+docs/GLOSSARY.md            every column and term emitted, and its source field
 docs/NORMAL_BAM_QC_REPORT.md  the original analysis the thresholds derive from
 TODO_260719.md              outstanding work, kept at the root to stay visible
 tests/testThresholds.R      smoke test over synthetic fixtures
+tests/testGlossary.R        fails when an output column is undocumented
 ```
 
 ## Usage
@@ -107,6 +109,9 @@ See `docs/METHODS.md` for how every number above was chosen.
 | `wgsTriage.html` | Standalone report with reference ranges and per-sample cards |
 | `wgsTriage_samples.tsv` | One row per sample, for trend tracking |
 | `wgsTriage_pairs.tsv` | One row per inferred tumor/normal pair |
+
+Every column of both tables, and every term either report uses, is defined in
+`docs/GLOSSARY.md` with the file and field it came from.
 
 The HTML contains plain-language failure cards intended to be sent to the data
 provider. They carry no technical vocabulary and make no claim about cause.
