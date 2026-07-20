@@ -157,6 +157,17 @@ dat <- dat |>
            hasSamtools = if (haveSamtools) !is.na(supplementaryRate) else FALSE)
 
 ##
+## Coverage floor, per sample class. Computed here rather than after the
+## verdicts because it is one of the checks the verdict is made from.
+##
+dat <- dat |>
+    mutate(coverageFloor = unname(COVERAGE_WARN[sampleType]),
+           lowCoverage = !is.na(meanCoverage) & meanCoverage < coverageFloor,
+           ## Short form keeps the fixed-width console columns aligned. "?" is
+           ## deliberately not "N": an unclassifiable name is its own category.
+           tn = recode(sampleType, unknown = "?"))
+
+##
 ## Drop filter thresholds whose entire source is absent for this cohort. A missing multiqc
 ## run is a cohort level fact worth stating once, not sixteen per-sample
 ## MISSING verdicts that bury the real signal.
@@ -180,22 +191,39 @@ thresholdResults <- dat |>
         direction == "low"  & !is.na(warn) & value < warn ~ "WARN",
         .default = "PASS"))
 
+##
+## The coverage floor joins the other checks rather than sitting beside them. It
+## cannot live in THRESHOLDS: that table carries one fixed value per metric, and
+## this floor depends on the sample class. The same dropping rule applies -- a
+## cohort with no coverage figures at all is not told sixteen times that
+## coverage is MISSING.
+##
+haveCoverage <- any(!is.na(dat$meanCoverage))
+
+if (haveCoverage) {
+    thresholdResults <- dat |>
+        transmute(sample,
+                  metric = "meanCoverage",
+                  value = meanCoverage,
+                  label = "Coverage",
+                  units = "x",
+                  direction = "low",
+                  fail = NA_real_,
+                  warn = coverageFloor,
+                  source = "picard_wgs",
+                  status = case_when(is.na(meanCoverage) ~ "MISSING",
+                                     lowCoverage ~ "WARN",
+                                     .default = "PASS")) |>
+        (\(cov) bind_rows(thresholdResults, cov))()
+}
+
+## Every check applied to a sample, which is the coverage floor plus the
+## thresholds that survived the drop above.
+nChecks <- nrow(usableThresholds) + as.integer(haveCoverage)
+
 verdicts <- sampleVerdict(thresholdResults)
 
 dat <- dat |> left_join(verdicts, by = "sample")
-
-##
-## Coverage floor. Advisory only and deliberately not a filter threshold: section 5.8 flags
-## these figures as untested, and a normal at 17x is a judgement call about the
-## analysis being attempted rather than a defect in the data. It is annotated
-## everywhere the verdict appears so it cannot be missed.
-##
-dat <- dat |>
-    mutate(coverageFloor = COVERAGE_WARN[sampleType],
-           lowCoverage = !is.na(meanCoverage) & meanCoverage < coverageFloor,
-           ## Short form keeps the fixed-width console columns aligned. "?" is
-           ## deliberately not "N": an unclassifiable name is its own category.
-           tn = recode(sampleType, unknown = "?"))
 
 ##
 ## Background reference ranges.
@@ -377,14 +405,15 @@ if (nFail > 0) {
 
 if (any(dat$lowCoverage)) {
     lowCov <- dat |> filter(lowCoverage) |> arrange(meanCoverage)
-    addRaw("  Coverage advisory (separate from the filter thresholds above):")
+    addRaw(thin)
+    addRaw("  BELOW COVERAGE FLOOR")
+    addRaw(thin)
     lowCov |>
-        mutate(line = sprintf("    %-21s %-4s %.0fx usable, below the %.0fx floor for %s",
+        mutate(line = sprintf("  %-21s %-4s %.0fx usable, below the %.0fx floor for %s",
                               str_trunc(sample, 21), tn, meanCoverage,
                               coverageFloor, sampleType)) |>
         pull(line) |>
         walk(addRaw)
-    addRaw("  These floors are not yet validated.")
     addRaw("")
 }
 
@@ -526,7 +555,9 @@ statusClass <- function(s) str_c("s", str_to_lower(s))
 ## Design rule 3 -- every number carries its reference range in the same row.
 metricCells <- function(sampleName) {
     thresholdResults |>
-        filter(sample == sampleName) |>
+        ## Coverage is a check like the others, but it has its own column at the
+        ## end of the row with its own formatting, so it is not repeated here.
+        filter(sample == sampleName, metric %in% usableThresholds$metric) |>
         arrange(match(metric, THRESHOLDS$metric)) |>
         mutate(cell = pmap_chr(list(metric, value, status, units, label), \(m, v, s, u, lab) {
             ref <- refMedian[m]
@@ -548,7 +579,7 @@ cohortRows <- dat |>
             glue('<tr><td class="name" data-label="Sample">{esc(s)}</td>',
                  '<td data-label="T/N">{t}</td>',
                  '<td class="{statusClass(v)} verdict" data-label="Verdict">{v}</td>{metricCells(s)}',
-                 '<td class="{if (isTRUE(low)) "swarn" else "spass"}" data-label="Coverage">',
+                 '<td class="{if (is.na(cov)) "smissing" else if (isTRUE(low)) "swarn" else "spass"}" data-label="Coverage">',
                  '<span class="v">{covTxt}</span><span class="r">{covRef}</span></td></tr>')
         })) |>
     pull(row) |>
@@ -558,7 +589,7 @@ metricHeader <- usableThresholds |>
     mutate(h = glue('<th>{esc(label)}<span class="sub">{esc(PLAIN[metric])}</span></th>')) |>
     pull(h) |>
     str_c(collapse = "") |>
-    str_c('<th>Coverage<span class="sub">Depth after quality filtering; advisory floor only</span></th>')
+    str_c('<th>Coverage<span class="sub">Depth after quality filtering; warns below the floor for its class</span></th>')
 
 pairRows <- if (nPairs > 0) {
     pairs |>
@@ -608,7 +639,7 @@ failureCards <- if (nFail > 0) {
             glue('
 <div class="card">
   <h3>{esc(s)} <span class="sfail verdict">FAILED</span></h3>
-  <p class="lead">This sample did not pass {nrow(failing)} of the {nrow(usableThresholds)} checks applied.</p>
+  <p class="lead">This sample did not pass {nrow(failing)} of the {nChecks} checks applied.</p>
   <table class="cardtable">
     <thead><tr><th>What we measured</th><th>This sample</th><th>Normal</th></tr></thead>
     <tbody>{rows}</tbody>
@@ -869,7 +900,8 @@ and unlike the SV caller it fails silently rather than crashing.</p>
 </table>
 <p class="meta">A sample tripping {WARN_ESCALATION} or more warnings at once is failed even when no single
 threshold fires, since these metrics move together under genuine degradation.
-Coverage floors ({COVERAGE_WARN[["N"]]}x normal, {COVERAGE_WARN[["T"]]}x tumor) are advisory and not yet validated.</p>
+Coverage below {COVERAGE_WARN[["N"]]}x for a normal or {COVERAGE_WARN[["T"]]}x for a tumor warns and counts toward that total;
+a sample whose class could not be read from its name is held to the tumor floor.</p>
 
 </div>
 <script>{scriptBlock}</script>

@@ -79,6 +79,10 @@ The two `pctExc` metrics warn but never fail on their own. They describe
 consequences rather than causes, and a high value is informative only alongside
 one of the others.
 
+These seven are the fixed thresholds. An eighth check, the coverage floor,
+varies by sample class and so is defined separately; see section 5. A report
+states the total, which is eight when every source is present.
+
 ---
 
 ## 3. How the thresholds were set
@@ -244,12 +248,32 @@ and the full distribution is available in the samtools `IS` block if that
 becomes necessary. The mean already separates the cohorts cleanly: defective
 samples ran 108 to 274 bases against 342 to 411 for clean ones.
 
-### Coverage floors are advisory
+### Coverage floors
 
-25x for normals and 50x for tumors. These are not validated, and they are
-reported in a separate advisory block, never as a verdict. A normal at 17x is a
-judgement call about the analysis being attempted, not a defect in the data. In
-Proj_16840_N they flag four samples, all of which fail on other grounds anyway.
+30x for normals, 80x for tumors, and 80x for samples whose class cannot be read
+from the name. The unclassifiable case takes the stricter of the two floors: an
+unreadable name is a reason to look, not a reason to apply the more forgiving
+threshold.
+
+The floor is a warning, not a failure. It counts toward the three-warning
+escalation like any other, so coverage can contribute to a `FAIL` but never
+causes one alone. It is stratified by class because tumors are sequenced far
+deeper than normals and a single number would be wrong for one of them.
+
+It cannot live in `THRESHOLDS`, which carries one fixed value per metric, so it
+is computed before the verdicts and appended to the threshold results as a
+`meanCoverage` row. The same dropping rule applies as to the other checks: a
+cohort with no coverage figures at all is not told once per sample that
+coverage is missing.
+
+Adopting these floors moved no verdicts. In Proj_16840_N seven samples fall
+below floor and all seven already fail on other thresholds. Across the 401
+archived samples that carry a coverage figure, none gains a third warning from
+the coverage check, so none escalates.
+
+The floors fire on 12.2% of those 401 samples, against 1.0% for the 25x/50x
+pair they replaced. The unclassifiable group is the largest, 266 of 401: the
+80x floor flags 32 of them (12.0%), where a 30x floor would flag one (0.4%).
 
 ---
 

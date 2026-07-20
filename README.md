@@ -84,8 +84,10 @@ A sample tripping three or more warnings at once is failed even when no single
 threshold fires, because these metrics are not independent and move together
 under genuine degradation.
 
-Coverage floors, 25x for normals and 50x for tumors, are advisory and reported
-in a separate block. They are not validated and are never a verdict.
+Coverage floors are 30x for normals and 80x for tumors. A sample whose class
+cannot be read from its name is held to the tumor floor. Falling below the
+floor raises a warning, which counts toward the three above; coverage alone
+never fails a sample.
 
 Pair checks are separate. A pair fails if either member fails, or if the tumor
 and normal insert size distributions differ by more than 1.5x. Two samples can

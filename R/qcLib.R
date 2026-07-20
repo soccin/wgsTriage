@@ -73,9 +73,15 @@ THRESHOLDS <- tribble(
 ## threshold on every metric and still be unusable.
 WARN_ESCALATION <- 3
 
-## Coverage floors are advisory and stratified by sample class, since tumors are
-## sequenced far deeper than normals. Section 5.8 flags these as unvalidated.
-COVERAGE_WARN <- c(N = 25, T = 50, unknown = 25)
+## Coverage floors, stratified by sample class since tumors are sequenced far
+## deeper than normals and one number would be wrong for one of them. A sample
+## below its floor warns. It never fails on coverage alone, but the warning
+## counts toward WARN_ESCALATION like any other.
+##
+## A sample whose class could not be read from its name is held to the tumor
+## floor. That is the stricter of the two: an unreadable name is a reason to
+## look, not a reason to apply the more forgiving threshold.
+COVERAGE_WARN <- c(N = 30, T = 80, unknown = 80)
 
 ## Tumor and normal insert size distributions must be comparable or Facets
 ## produces a result that is wrong without crashing. Section 5.6; the 1.5x
