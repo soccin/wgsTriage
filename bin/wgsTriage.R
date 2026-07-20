@@ -47,8 +47,9 @@ getOpt <- function(flag, fallback) {
 
 usage <- function() {
     glue("
-wgsTriage.R -- post-mapping QC filter. Reads only what the Map stage already
-wrote and renders a verdict per sample and per tumor/normal pair.
+wgsTriage.R {WGSTRIAGE_VERSION} -- post-mapping QC filter. Reads only what the
+Map stage already wrote and renders a verdict per sample and per tumor/normal
+pair.
 
 Usage:
   Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>]

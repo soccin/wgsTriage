@@ -1,5 +1,6 @@
 # Guards the PHI decision: this repository ships aggregate statistics only.
-# See PLAN_01.md section 3.
+# The per-sample files stay out until the anonymisation work is done; see
+# TODO_260719.md section 3 for what that involves and why.
 
 # Background. Deny by default and allow only the three name-free aggregates,
 # so any further file the importer emits stays out until it has been reviewed.

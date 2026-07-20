@@ -1,5 +1,9 @@
 # Methods
 
+Thresholds as of `wgsTriage` 0.9.0. Any report produced by a different version
+may have been judged against different numbers; `--help` prints the version of
+the tool that wrote it.
+
 How `wgsTriage` decides that a sample is unusable, and why each number is what
 it is. Every threshold here was set against an archive of previously mapped
 projects rather than chosen in the abstract, and the observed ranges that
@@ -78,6 +82,12 @@ one of the others.
 ---
 
 ## 3. How the thresholds were set
+
+The derivation is in `docs/NORMAL_BAM_QC_REPORT.md`, which is the original
+analysis of the Proj_16840_N failure and the source of the separation argument
+below. `docs/DECISIONS.md` records what was chosen and what remains
+unvalidated. This section summarises both; those two are what to read if a
+number here is challenged.
 
 ### The chimera threshold, and why it moved
 
