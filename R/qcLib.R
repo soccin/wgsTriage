@@ -46,9 +46,9 @@ suppressPackageStartupMessages({
 ## The samtools thresholds are the independent confirmation: supplementary alignment
 ## rate measures essentially the same physical defect as PCT_CHIMERAS but is
 ## computed by a different tool on a different pass over the data. It is also
-## the tightest metric available, spanning only 0.094 to 0.160% across every
-## clean sample in the archive, so a 1.0% threshold sits 6x above the observed
-## maximum. Agreement between the two is what makes a FAIL verdict defensible
+## the tightest metric available, spanning only 0.094 to 0.389% across every
+## clean sample in the archive, so a 1.0% threshold sits about 2.6x above the
+## observed maximum. Agreement between the two is what makes a FAIL verdict defensible
 ## to someone upstream who does not want to hear it.
 ##
 ## `label` is the column heading in the HTML report and nothing else, so it is
