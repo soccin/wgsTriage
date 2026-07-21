@@ -312,13 +312,13 @@ overallVerdict <- case_when(
 ## Section 9.1: the technical term appears nowhere the sequencing core will read.
 ##
 PLAIN <- c(
-    pctChimeras = "Reads split across two separate genomic locations",
-    supplementaryRate = "Reads reported at more than one location",
-    pctSoftclip = "Portion of each read discarded at alignment",
-    pctReadUsed = "Portion of each read that could be used",
-    pctProperlyPaired = "Read pairs landing where they should",
-    pctExcOverlap = "Bases dropped because mates overlapped",
-    pctExcTotal = "Bases dropped for all reasons")
+    pctChimeras = "Chimeric read pairs",
+    supplementaryRate = "Supplemental alignment rate",
+    pctSoftclip = "Soft clipped bases",
+    pctReadUsed = "Usable fraction of each read",
+    pctProperlyPaired = "Read aligned as proper pairs",
+    pctExcOverlap = "Bases lost to mate overlap",
+    pctExcTotal = "Bases lost, all causes")
 
 ACTION <- c(
     pctChimeras = "Structural variant calling will fail or produce false positives.",
@@ -551,20 +551,18 @@ sourcePath <- displayPath(mapDir)
 
 statusClass <- function(s) str_c("s", str_to_lower(s))
 
-## One row of the cohort table: value, reference range, and verdict together.
-## Design rule 3 -- every number carries its reference range in the same row.
+## One row of the cohort table: just the value and verdict. The background norm
+## is the same for every sample in a column, so it lives once in the header
+## rather than being repeated down every cell.
 metricCells <- function(sampleName) {
     thresholdResults |>
         ## Coverage is a check like the others, but it has its own column at the
         ## end of the row with its own formatting, so it is not repeated here.
         filter(sample == sampleName, metric %in% usableThresholds$metric) |>
         arrange(match(metric, THRESHOLDS$metric)) |>
-        mutate(cell = pmap_chr(list(metric, value, status, units, label), \(m, v, s, u, lab) {
-            ref <- refMedian[m]
-            refTxt <- if (is.na(ref)) "no background" else sprintf("norm %.2f%s", ref, u)
+        mutate(cell = pmap_chr(list(value, status, units, label), \(v, s, u, lab) {
             valTxt <- if (is.na(v)) "n/a" else sprintf("%.2f%s", v, u)
-            glue('<td class="{statusClass(s)}" data-label="{esc(lab)}"><span class="v">{valTxt}</span>',
-                 '<span class="r">{refTxt}</span></td>')
+            glue('<td class="{statusClass(s)}" data-label="{esc(lab)}"><span class="v">{valTxt}</span></td>')
         })) |>
         pull(cell) |>
         str_c(collapse = "")
@@ -572,24 +570,41 @@ metricCells <- function(sampleName) {
 
 cohortRows <- dat |>
     arrange(match(verdict, c("FAIL", "INCOMPLETE", "WARN", "PASS")), desc(pctChimeras)) |>
-    mutate(row = pmap_chr(list(sample, sampleType, verdict, meanCoverage, lowCoverage, coverageFloor),
-        \(s, t, v, cov, low, floor) {
+    mutate(row = pmap_chr(list(sample, sampleType, verdict, meanCoverage, lowCoverage),
+        \(s, t, v, cov, low) {
             covTxt <- if (is.na(cov)) "n/a" else sprintf("%.0fx", cov)
-            covRef <- if (is.na(floor)) "" else sprintf("floor %.0fx", floor)
             glue('<tr><td class="name" data-label="Sample">{esc(s)}</td>',
                  '<td data-label="T/N">{t}</td>',
                  '<td class="{statusClass(v)} verdict" data-label="Verdict">{v}</td>{metricCells(s)}',
                  '<td class="{if (is.na(cov)) "smissing" else if (isTRUE(low)) "swarn" else "spass"}" data-label="Coverage">',
-                 '<span class="v">{covTxt}</span><span class="r">{covRef}</span></td></tr>')
+                 '<span class="v">{covTxt}</span></td></tr>')
         })) |>
     pull(row) |>
     str_c(collapse = "\n")
 
 metricHeader <- usableThresholds |>
-    mutate(h = glue('<th>{esc(label)}<span class="sub">{esc(PLAIN[metric])}</span></th>')) |>
+    mutate(normTxt = if_else(is.na(refMedian[metric]), "no background",
+                             sprintf("norm %.2f%s", refMedian[metric], units)),
+           h = glue('<th>{esc(label)}<span class="sub">{esc(PLAIN[metric])}</span>',
+                    '<span class="norm">{esc(normTxt)}</span></th>')) |>
     pull(h) |>
     str_c(collapse = "") |>
-    str_c('<th>Coverage<span class="sub">Depth after quality filtering; warns below the floor for its class</span></th>')
+    str_c(glue('<th>Coverage<span class="sub">Usable depth after filtering</span>',
+               '<span class="norm">floor T:{COVERAGE_WARN[["T"]]}x, N:{COVERAGE_WARN[["N"]]}x</span></th>'))
+
+## Fixed column layout for the cohort table (table-layout: fixed via the .cohort
+## class). Sample gets a wide fixed column; T/N and Verdict are as narrow as their
+## content allows. Verdict is sized to the longest label actually present: every
+## verdict is four letters except INCOMPLETE, so a cohort without one needs far
+## less room. The remaining columns -- one per usable metric plus Coverage --
+## carry no width, so the fixed layout splits the leftover space equally between
+## them. They stay the same width whatever the metric count, which is what keeps a
+## short-valued column like "Split pairs" from collapsing.
+verdictColWidth <- if ("INCOMPLETE" %in% dat$verdict) "6.4rem" else "3.6rem"
+cohortColgroup <- str_c(
+    '<col class="c-sample"><col class="c-tn">',
+    glue('<col class="c-verdict" style="width:{verdictColWidth}">'),
+    str_c(rep('<col>', nrow(usableThresholds) + 1L), collapse = ""))
 
 pairRows <- if (nPairs > 0) {
     pairs |>
@@ -771,6 +786,17 @@ th, td { padding: .45rem .55rem; text-align: left; border-bottom: 1px solid var(
 th { background: var(--thBg); font-weight: 600; font-size: .75rem; }
 th .sub { display: block; font-weight: 400; color: var(--muted2); font-size: .6875rem;
   max-width: 9rem; }
+th .norm { display: block; font-weight: 600; color: var(--muted); font-size: .6875rem;
+  margin-top: .25rem; font-variant-numeric: tabular-nums; }
+/*
+ * The cohort table sizes its columns explicitly (colgroup) rather than from
+ * content. Sample is wide; T/N and Verdict are narrow; the metric columns and
+ * Coverage carry no width and so split the remaining space equally, which keeps
+ * a short-valued column like "Split pairs" from collapsing to its content.
+ */
+.cohort { table-layout: fixed; }
+.cohort .c-sample { width: 12rem; }
+.cohort .c-tn { width: 3.25rem; }
 /*
  * Sample names are one unbreakable token. break-all split them mid-name
  * (APTL_MDA009_ / N01) because it also tells the auto table layout the column
@@ -904,7 +930,8 @@ html <- glue('<!doctype html>
 
 <h2>Cohort</h2>
 <p class="meta">Worst first. Each cell shows the measured value above the clean-sample reference.</p>
-<table>
+<table class="cohort">
+{cohortColgroup}
 <thead><tr><th>Sample</th><th>T/N</th><th>Verdict</th>{metricHeader}</tr></thead>
 <tbody>
 {cohortRows}
