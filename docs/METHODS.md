@@ -183,6 +183,10 @@ chimera figures above, the 421-sample bands and the ReMap finding, come from the
 richer QCData archive rather than the shipped stats. The two converge when the
 background is rebuilt; see `docs/BACKGROUND.md` section 7 and the punch list.
 
+---
+
+## 4. Corroboration
+
 This is the section that answers "how do you know?"
 
 `pctChimeras` comes from Picard. `supplementaryRate` comes from samtools. They
