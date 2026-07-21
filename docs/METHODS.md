@@ -148,11 +148,10 @@ metrics file predates `MEAN_ALIGNED_READ_LENGTH`, so this threshold runs on its
 fixed value with no distribution behind it. This resolves itself as new
 projects accumulate.
 
-The samtools background is no longer thin: 512 of 599 archived samples, 85.5%,
-now carry samtools metrics. It used to be 98 of 454, and the difference is a
-fixed importer rather than new data. The reader kept only multiqc rows suffixed
-`.recal` and dropped the `.md` rows, which is 512 of the 611 rows in the
-archive.
+The samtools background is no longer thin: 512 of 621 samples, 82.4%, now carry
+samtools metrics. It used to be 98 of 454, and the difference is a fixed importer
+rather than new data: the reader kept only multiqc rows suffixed `.recal` and
+dropped the `.md` rows that most cohorts emit instead.
 
 This matters for more than sample count. Every cohort with an elevated
 supplementary rate exists in this archive as `.md` rows alone, so the old
@@ -169,8 +168,8 @@ stages. The offset is around 3% of the 1.0% supplementary threshold and moves no
 sample near a verdict boundary, and `backgroundSamples.tsv` records which stage
 each sample came from in `samtoolsStage`.
 
-Reference ranges are computed from the 557 samples that failed none of the
-thresholds they could be evaluated on; 341 of those carry both Picard files.
+Reference ranges are computed from the 579 samples that failed none of the
+thresholds they could be evaluated on; only 2 of those carry both Picard files.
 Requiring both files, as this once did, excluded a sample from every reference
 range whenever it was missing one of them, including the ranges built from the
 file it did have. Including defective samples would widen the range enough to
@@ -178,9 +177,11 @@ admit the next bad cohort, so the gate is what a sample failed. Robust
 statistics alone are not sufficient protection when the contaminated fraction is
 above 5% and concentrated in a single cohort.
 
----
-
-## 4. Corroboration
+One caveat while the background is mid-rebuild: the committed archive (QCDataV2)
+is rich in samtools metrics but thin on alignment metrics, only 77 samples. The
+chimera figures above, the 421-sample bands and the ReMap finding, come from the
+richer QCData archive rather than the shipped stats. The two converge when the
+background is rebuilt; see `docs/BACKGROUND.md` section 7 and the punch list.
 
 This is the section that answers "how do you know?"
 

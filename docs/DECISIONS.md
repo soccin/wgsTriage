@@ -89,8 +89,8 @@ I did not parse it because the mean already discriminates.
 Not in the original spec and worth keeping. `supplementary_alignments /
 raw_total_sequences` measures essentially the same defect as `PCT_CHIMERAS` but
 comes from a different tool on a different pass. It is also the tightest metric
-available: 0.094 to 0.160% across every clean sample in the archive, so the 1.0%
-gate sits 6x above the observed maximum, versus roughly 5x for chimeras.
+available: 0.094 to 0.389% across every clean sample in the archive, so the 1.0%
+gate sits about 2.6x above the observed maximum, versus roughly 5x for chimeras.
 
 `reads_properly_paired_percent` splits the cohort at 99% (defective 87.9 to 94.3,
 clean 99.45 to 99.58) and is included too.
@@ -121,8 +121,10 @@ Worth knowing if you write anything else against `backgroundSamples.tsv`:
 ### Reference ranges exclude failing samples
 
 Robust statistics alone are not enough when the contaminated fraction is 5%+ and
-concentrated in one cohort. Ranges come from the 346 samples that pass the gates
-and have both Picard files.
+concentrated in one cohort. Ranges come from the 579 samples that failed none of
+the checks they could be evaluated on. An earlier rule also required both Picard
+files; it is gone, because it excluded a sample from ranges built from the file
+it did have. Only 2 reference samples carry both files.
 
 ### Qualimap not read at all
 
@@ -144,12 +146,15 @@ as the fraction section 5.3 describes. Same quantity, but a bare `0.86` sitting
 in a column of percentages gets read as `0.86%`, which inverts its meaning. The
 raw `alignedFrac` is still written to the TSV.
 
-### Samtools background is thin
+### Samtools background is no longer thin
 
-Only 98 of 454 archived samples (21.6%) have multiqc data, and all 98 are clean,
-so there is no observed defective distribution for those metrics. The thresholds
-are anchored on the clean range plus a wide margin rather than on separation
-between two observed populations.
+The importer now reads the whole archive, `.md` rows included, so 512 of 621
+samples (82.4%) carry samtools metrics, against 98 of 454 before. A defective
+distribution is present too (clean 0.094 to 0.389%, archive up to 15.4%), so
+`supplementaryRate` and `pctProperlyPaired` rest on observed separation rather
+than the clean range plus a margin. See `docs/METHODS.md` section 3 and
+`docs/BACKGROUND.md` section 5. The vetting weakness that remains is in the
+alignment metrics, not samtools: only 2 of 579 reference samples are full-tier.
 
 ### Coverage floors are chosen, not derived
 

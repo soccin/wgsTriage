@@ -15,7 +15,7 @@ The report sent to the data provider. Sections in the order they appear.
 |---|---|---|
 | Banner and counts | Cohort verdict and six headline counts. | Always. |
 | Notes | Incomplete cohort, reduced check set. | Cohort is incomplete, or a check's entire source is absent. |
-| `Cohort` | One row per sample: name, class, verdict, one cell per applied check, coverage. Each cell shows the measured value above the reference median. Ordered failures, incomplete, warnings, passes. | Every sample submitted. |
+| `Cohort` | One row per sample: name, class, verdict, one cell per applied check, coverage. Each cell shows the measured value; the reference median for the column, and the coverage floors, sit in the column header. Ordered failures, incomplete, warnings, passes. | Every sample submitted. |
 | `Tumor / normal pairs` | Patient, tumor, normal, both insert sizes, ratio, verdict, reason. | All inferred pairs. States when none could be inferred. |
 | `Per-sample detail for the data provider` | One card per sample: the checks it failed, each value against the reference median, and the effect on downstream analysis. | Verdict `FAIL`. |
 | `Thresholds applied` | Each check with its plain-language description, fail and warn values, reference median, and the number of background samples behind that median. | The checks evaluated for this cohort. |
@@ -216,8 +216,8 @@ shipped as aggregates in `data/background/`.
 
 **`backgroundStats.tsv`** is the file the report reads. One row per metric,
 with columns `n`, `median`, `mad`, `q01`, `q05`, `q25`, `q75`, `q95`, `q99`,
-`min` and `max`. The report uses `median` as the reference shown under every
-value in the cohort table and as the denominator of `chimeraFold` and
+`min` and `max`. The report uses `median` as the reference shown in each
+column header of the cohort table and as the denominator of `chimeraFold` and
 `suppFold`, and `n` as the number of samples behind that median.
 
 **Which samples are included.** A reference sample is one that could be

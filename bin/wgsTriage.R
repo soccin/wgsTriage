@@ -929,7 +929,7 @@ html <- glue('<!doctype html>
 {if (nrow(droppedThresholds) > 0) glue(\'<div class="note"><b>Reduced check set.</b> {nrow(droppedThresholds)} filter threshold(s) were not evaluated because this cohort carries no data for them: <code>{str_c(droppedThresholds$metric, collapse = ", ")}</code>.{if ("samtools" %in% droppedSources) " Without samtools metrics there is no independent confirmation of the Picard result, so every verdict below rests on a single tool." else ""}</div>\') else ""}
 
 <h2>Cohort</h2>
-<p class="meta">Worst first. Each cell shows the measured value above the clean-sample reference.</p>
+<p class="meta">Worst first. Each cell shows the measured value; the clean-sample reference for each column is in its header.</p>
 <table class="cohort">
 {cohortColgroup}
 <thead><tr><th>Sample</th><th>T/N</th><th>Verdict</th>{metricHeader}</tr></thead>

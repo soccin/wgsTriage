@@ -23,9 +23,10 @@ R/qcLib.R                   shared parsing and filter threshold logic
 data/background/            generated reference ranges, aggregate only
 docs/METHODS.md             how the thresholds were set, and why
 docs/DECISIONS.md           what was chosen, and what is still unvalidated
+docs/BACKGROUND.md          how the reference ranges are gathered and computed
 docs/GLOSSARY.md            every column and term emitted, and its source field
 docs/NORMAL_BAM_QC_REPORT.md  the original analysis the thresholds derive from
-TODO_260719.md              outstanding work, kept at the root to stay visible
+TODO_260721.md              outstanding work, kept at the root to stay visible
 tests/testThresholds.R      smoke test over synthetic fixtures
 tests/testGlossary.R        fails when an output column is undocumented
 ```
