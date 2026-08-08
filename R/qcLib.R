@@ -1,5 +1,5 @@
 ##
-## Shared parsing and gating logic for post-mapping pre-flight QC.
+## Shared parsing and gating logic for post-mapping wgs-triage QC.
 ## Sourced by bin/wgsTriage.R and bin/wgsTriageBackground.R.
 ##
 ## Inputs are restricted to what the Map stage already produces:
@@ -178,6 +178,67 @@ classifySampleType <- function(sample) {
 ## APTL_MDA012.
 patientStem <- function(sample) {
     str_remove(sample, "[._-]?[NT][0-9]*([._-]D[0-9]*)?$")
+}
+
+##
+## Optional pairing file. Two columns, NORMAL_ID and TUMOR_ID, one row per
+## tumor/normal pair. When present it overrides name-based tumor/normal class
+## and supplies the patient key used to form pairs: each normal keeps its own
+## ID as patient, and each tumor inherits the NORMAL_ID it is paired with.
+## Samples absent from the file keep classifySampleType() / patientStem().
+##
+readPairingFile <- function(path) {
+    if (!file_exists(path)) {
+        stop(glue("Pairing file not found: {path}"), call. = FALSE)
+    }
+    pairing <- read_tsv(path, show_col_types = FALSE, progress = FALSE)
+    required <- c("NORMAL_ID", "TUMOR_ID")
+    missing <- setdiff(required, names(pairing))
+    if (length(missing) > 0) {
+        stop(glue("Pairing file {path} is missing required column(s): {str_c(missing, collapse = ', ')}. ",
+                  "Expected a TSV with NORMAL_ID and TUMOR_ID."),
+             call. = FALSE)
+    }
+    pairing <- pairing |>
+        transmute(NORMAL_ID = str_trim(as.character(NORMAL_ID)),
+                  TUMOR_ID  = str_trim(as.character(TUMOR_ID))) |>
+        filter(!is.na(NORMAL_ID), !is.na(TUMOR_ID),
+               NORMAL_ID != "", TUMOR_ID != "")
+    if (nrow(pairing) == 0) {
+        stop(glue("Pairing file {path} has no usable NORMAL_ID / TUMOR_ID rows."),
+             call. = FALSE)
+    }
+    both <- intersect(pairing$NORMAL_ID, pairing$TUMOR_ID)
+    if (length(both) > 0) {
+        stop(glue("Pairing file {path} lists the same sample as both NORMAL_ID and TUMOR_ID: ",
+                  "{str_c(both, collapse = ', ')}."),
+             call. = FALSE)
+    }
+    multiNormal <- pairing |> count(TUMOR_ID, name = "n") |> filter(n > 1)
+    if (nrow(multiNormal) > 0) {
+        stop(glue("Pairing file {path} pairs tumor(s) to more than one normal: ",
+                  "{str_c(multiNormal$TUMOR_ID, collapse = ', ')}. ",
+                  "Each TUMOR_ID must appear once."),
+             call. = FALSE)
+    }
+    pairing
+}
+
+## Overlay pairing-file class and patient onto a per-sample table that already
+## carries name-based sampleType and patient. Listed samples win; others stay.
+applyPairing <- function(dat, pairing) {
+    normals <- pairing |>
+        distinct(NORMAL_ID) |>
+        transmute(sample = NORMAL_ID, sampleTypePair = "N", patientPair = NORMAL_ID)
+    tumors <- pairing |>
+        transmute(sample = TUMOR_ID, sampleTypePair = "T", patientPair = NORMAL_ID)
+    override <- bind_rows(normals, tumors)
+
+    dat |>
+        left_join(override, by = "sample") |>
+        mutate(sampleType = coalesce(sampleTypePair, sampleType),
+               patient    = coalesce(patientPair, patient)) |>
+        select(-sampleTypePair, -patientPair)
 }
 
 ##

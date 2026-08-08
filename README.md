@@ -40,7 +40,7 @@ run from any working directory.
 Assess a project:
 
 ```
-Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>]
+Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>] [--pairing <File>]
 ```
 
 Rebuild the background, needed only when new projects land:

@@ -81,8 +81,8 @@ not be read appears with empty values rather than being omitted.
 |---|---|
 | `project` | The `--project` argument, or the directory containing `<MapDir>`. |
 | `sample` | File basename with the `.asm.txt` / `.wgs.txt` extension and any `.smap`, `.md` or `.recal` suffix removed. |
-| `sampleType` | Sample class read from the sample name by regex: `N`, `T`, or `unknown` when no trailing class token is present. |
-| `patient` | The sample name with its trailing class token removed. `APTL_MDA012_N02` and `APTL_MDA012_T01` both reduce to `APTL_MDA012`. Used to match samples into pairs. |
+| `sampleType` | Sample class: `N`, `T`, or `unknown`. From the sample-name regex by default; overridden by `--pairing` when the sample is listed as `NORMAL_ID` or `TUMOR_ID`. |
+| `patient` | Pairing key. By default the sample name with its trailing class token removed (`APTL_MDA012_N02` and `APTL_MDA012_T01` both reduce to `APTL_MDA012`). With `--pairing`, listed normals keep their own ID and listed tumors inherit the `NORMAL_ID` they are paired with. |
 
 ### Verdict
 
