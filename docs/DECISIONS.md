@@ -105,8 +105,10 @@ sample in Proj_16840_N and Proj_17495_I. Returns `unknown` rather than guessing,
 and unknown is displayed as `?`, never silently treated as normal. Unpaired
 samples are named in the report.
 
-This will mis-handle unusual naming. If it becomes a problem the fix is an
-optional pairing-file argument, which I left out under YAGNI.
+This will mis-handle unusual naming. That case is handled by `--pairing`, a TSV
+with `NORMAL_ID` and `TUMOR_ID` columns that overrides name-based class for
+listed samples and defines which samples form pairs. Unlisted samples still use
+the regex.
 
 ### Background keyed on project plus sample
 

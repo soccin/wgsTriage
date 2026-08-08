@@ -52,7 +52,8 @@ Map stage already wrote and renders a verdict per sample and per tumor/normal
 pair.
 
 Usage:
-  Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>]
+  Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>]
+                          [--project <Name>] [--pairing <File>]
   Rscript bin/wgsTriage.R --help
 
 Arguments:
@@ -67,9 +68,13 @@ Options:
                          Default: <repoRoot>/data/background
                          If missing, the filters still run but on fixed
                          thresholds only, with no out-of-range detection.
-  --out <OutDir>         Directory for the report. Default: ./wgsTriage_out
+  --out <OutDir>         Directory for the report. Default: ./triage
   --project <Name>       Label shown in the report.
                          Default: the directory containing <MapDir>.
+  --pairing <File>       TSV with NORMAL_ID and TUMOR_ID columns. Overrides
+                         name-based tumor/normal class for listed samples and
+                         defines which samples form pairs. Unlisted samples
+                         still use the sample-name regex.
   -h, --help             Show this message and exit.
 
 Writes into <OutDir>:
@@ -90,7 +95,7 @@ if (any(args %in% c("-h", "--help"))) {
     quit(save = "no", status = 0)
 }
 
-flags <- c("--background", "--out", "--project")
+flags <- c("--background", "--out", "--project", "--pairing")
 flagValues <- map_chr(flags, \(f) getOpt(f, NA_character_))
 consumed <- c(flags, flagValues[!is.na(flagValues)])
 positional <- args[!args %in% consumed]
@@ -99,7 +104,8 @@ if (length(positional) == 0) {
     stop(glue("
 No Map directory given.
 
-  Usage: Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>]
+  Usage: Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>]
+                                  [--project <Name>] [--pairing <File>]
 
   <MapDir> is the Map stage output to assess.
   Run with --help for the full description and the list of outputs.
@@ -113,8 +119,9 @@ if (!dir_exists(mapDir)) {
 }
 
 backgroundDir <- getOpt("--background", defaultBackground)
-outDir <- getOpt("--out", "wgsTriage_out")
+outDir <- getOpt("--out", "triage")
 projectName <- getOpt("--project", path_file(path_real(path(mapDir, ".."))))
+pairingFile <- getOpt("--pairing", NA_character_)
 dir_create(outDir)
 
 metricsDir <- path(mapDir, "out", "metrics")
@@ -148,6 +155,14 @@ dat <- tibble(sample = expectedSamples) |>
     mutate(project = projectName,
            sampleType = classifySampleType(sample),
            patient = patientStem(sample))
+
+##
+## Optional pairing file overrides name-based T/N class and the patient key
+## used to form pairs. Must land before the coverage floor, which is stratified
+## by sample class.
+##
+havePairing <- !is.na(pairingFile)
+if (havePairing) dat <- applyPairing(dat, readPairingFile(pairingFile))
 
 if (haveSamtools) dat <- dat |> left_join(samtools, by = "sample")
 
@@ -340,7 +355,7 @@ add <- function(...) L <<- c(L, glue(..., .envir = parent.frame()))
 addRaw <- function(x) L <<- c(L, x)
 
 addRaw(rule)
-addRaw("  BAM PRE-FLIGHT QC")
+addRaw("  BAM WGS-TRIAGE QC")
 add("  Project {projectName}  |  {nChecked} of {nExpected} samples checked  |  {Sys.Date()}")
 addRaw(rule)
 addRaw("")
@@ -623,7 +638,7 @@ pairRows <- if (nPairs > 0) {
         pull(row) |>
         str_c(collapse = "\n")
 } else {
-    '<tr><td colspan="8" data-label="Pairs">No tumor/normal pairs could be inferred from the sample names.</td></tr>'
+    '<tr><td colspan="8" data-label="Pairs">No tumor/normal pairs could be formed.</td></tr>'
 }
 
 ##
@@ -900,7 +915,7 @@ html <- glue('<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pre-flight QC -- {esc(projectName)}</title>
+<title>wgs-triage QC -- {esc(projectName)}</title>
 <style>
 {styleBlock}
 </style>
@@ -909,7 +924,7 @@ html <- glue('<!doctype html>
 <div class="wrap">
 
 <div class="head">
-<h1>BAM pre-flight QC</h1>
+<h1>BAM wgs-triage QC</h1>
 <button type="button" id="themeToggle" class="themeToggle">Dark mode</button>
 </div>
 <p class="meta">Project <b>{esc(projectName)}</b> &nbsp;|&nbsp; source: <code>{esc(sourcePath)}</code><br>{nChecked} of {nExpected} samples checked<br>{Sys.Date()} &nbsp;|&nbsp; wgsTriage {WGSTRIAGE_VERSION}</p>
@@ -939,7 +954,7 @@ html <- glue('<!doctype html>
 </table>
 
 <h2>Tumor / normal pairs</h2>
-<p class="meta">Pairing is inferred from sample names. Two samples can each pass on their
+<p class="meta">{if (havePairing) "Pairing comes from the --pairing file, which also sets tumor/normal class for listed samples." else "Pairing is inferred from sample names."} Two samples can each pass on their
 own and still be unusable together: Facets needs comparable insert size distributions,
 and unlike the SV caller it fails silently rather than crashing.</p>
 <table>

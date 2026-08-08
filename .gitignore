@@ -14,7 +14,7 @@ data/background/*
 
 # Generated reports. These carry real sample names, so they are excluded both
 # by output-directory convention and by filename, whatever --out is set to.
-wgsTriage_out/
+triage/
 wgsTriage.txt
 wgsTriage.html
 wgsTriage_samples.tsv
