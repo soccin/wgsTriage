@@ -115,9 +115,10 @@ the HTML `Cohort` table.
 `pctReadUsed` is the percentage of each delivered read that survived alignment.
 No Picard field reports it directly.
 
-`pctReadUsed` has no reference median. Every archived asm file was written by a
-Picard version predating `MEAN_ALIGNED_READ_LENGTH`, so the metric is judged
-against its fixed threshold alone.
+`pctReadUsed` has a reference median only if the background includes samples
+from a Picard version that emits `MEAN_ALIGNED_READ_LENGTH`; older asm files
+lack it. Without a median the metric is judged against its fixed threshold
+alone.
 
 ### Coverage
 

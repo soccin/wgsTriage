@@ -9,6 +9,12 @@ it is. Every threshold here was set against an archive of previously mapped
 projects rather than chosen in the abstract, and the observed ranges that
 justify them are given alongside.
 
+Those archive figures are the evidence each threshold was set on, measured on
+the QCData and QCDataV2 archives in July 2026. They are not updated when the
+background is rebuilt, which happens regularly as new projects are mapped. The
+current reference ranges are in `data/background/`, and `docs/BACKGROUND.md`
+section 5 has the build log.
+
 Read this before changing a threshold.
 
 ---
@@ -139,26 +145,28 @@ samples that came almost entirely from one cohort, because the importer read
 only multiqc rows suffixed `.recal` and discarded the `.md` rows that most
 cohorts emit instead. The range across all 11 cohorts is genuinely wider.
 
-### Where the background is thin, and the tool says so
+### Where the background was thin when the thresholds were set
 
-Two honest gaps, both reported in the output rather than hidden:
+Two gaps, both reported in the output rather than hidden:
 
-`pctReadUsed` has no historical background at all. Every archived alignment
-metrics file predates `MEAN_ALIGNED_READ_LENGTH`, so this threshold runs on its
-fixed value with no distribution behind it. This resolves itself as new
-projects accumulate.
+`pctReadUsed` had no historical background at all. Every alignment metrics
+file in the July 2026 archives predated `MEAN_ALIGNED_READ_LENGTH`, so this
+threshold was set on its fixed value with no distribution behind it. Newer
+projects carry the field, so the background gains `pctReadUsed` samples with
+each rebuild; the current `n` is in `data/background/backgroundStats.tsv`.
 
-The samtools background is no longer thin: 512 of 621 samples, 82.4%, now carry
-samtools metrics. It used to be 98 of 454, and the difference is a fixed importer
-rather than new data: the reader kept only multiqc rows suffixed `.recal` and
-dropped the `.md` rows that most cohorts emit instead.
+The samtools background was thin at first: 98 of 454 samples. On the
+2026-07-20 build it was 512 of 621, 82.4%, and the difference was a fixed
+importer rather than new data: the reader kept only multiqc rows suffixed
+`.recal` and dropped the `.md` rows that most cohorts emit instead.
 
 This matters for more than sample count. Every cohort with an elevated
 supplementary rate exists in this archive as `.md` rows alone, so the old
 samtools background contained no defective sample at all, and those thresholds
 rested on the clean range plus a margin with no observed second population to
-point at. Clean samples now run 0.094 to 0.389% and the archive holds samples
-up to 15.4%, so the separation is visible in the data rather than assumed.
+point at. On the 2026-07-20 build clean samples ran 0.094 to 0.389% and the
+archive held samples up to 15.4%, so the separation was visible in the data
+rather than assumed.
 
 One caveat that comes with the fix: `.recal` and `.md` describe the same library
 one pipeline step apart, and on the 99 samples carrying both, `.recal` runs
@@ -168,8 +176,9 @@ stages. The offset is around 3% of the 1.0% supplementary threshold and moves no
 sample near a verdict boundary, and `backgroundSamples.tsv` records which stage
 each sample came from in `samtoolsStage`.
 
-Reference ranges are computed from the 579 samples that failed none of the
-thresholds they could be evaluated on; only 2 of those carry both Picard files.
+Reference ranges are computed from the samples that failed none of the
+thresholds they could be evaluated on. How many there are, and how many of
+them carry both Picard files, is recorded per build in the build log.
 Requiring both files, as this once did, excluded a sample from every reference
 range whenever it was missing one of them, including the ranges built from the
 file it did have. Including defective samples would widen the range enough to
@@ -177,11 +186,10 @@ admit the next bad cohort, so the gate is what a sample failed. Robust
 statistics alone are not sufficient protection when the contaminated fraction is
 above 5% and concentrated in a single cohort.
 
-One caveat while the background is mid-rebuild: the committed archive (QCDataV2)
-is rich in samtools metrics but thin on alignment metrics, only 77 samples. The
-chimera figures above, the 421-sample bands and the ReMap finding, come from the
-richer QCData archive rather than the shipped stats. The two converge when the
-background is rebuilt; see `docs/BACKGROUND.md` section 7 and the punch list.
+The chimera figures above, the 421-sample bands and the ReMap finding, come
+from the QCData archive. The 2026-07-20 build (QCDataV2) held only 77
+alignment-metrics samples; later builds scan the working tree and carry far
+more. See the build log in `docs/BACKGROUND.md` section 5.
 
 ---
 
@@ -216,8 +224,8 @@ fires. These metrics are not independent: genuine degradation pushes all of
 them at once. Without this rule a sample can sit just below every threshold on
 every metric and still be unusable.
 
-The number three is a judgement call, not a derived value. Across the whole
-archive it promotes exactly one sample, which carried 3.78% chimeras with five
+The number three is a judgement call, not a derived value. When it was set, it
+promoted exactly one archived sample, which carried 3.78% chimeras with five
 simultaneous warnings. It is `WARN_ESCALATION` in `R/qcLib.R`.
 
 ### Verdict precedence
@@ -273,7 +281,7 @@ coverage is missing.
 
 Adopting these floors moved no verdicts. In Proj_16840_N seven samples fall
 below floor and all seven already fail on other thresholds. Across the 401
-archived samples that carry a coverage figure, none gains a third warning from
+samples carrying a coverage figure in the 2026-07-20 build, none gains a third warning from
 the coverage check, so none escalates.
 
 The floors fire on 12.2% of those 401 samples, against 1.0% for the 25x/50x

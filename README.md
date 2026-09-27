@@ -43,7 +43,9 @@ Assess a project:
 Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>] [--pairing <File>]
 ```
 
-Rebuild the background, needed only when new projects land:
+Rebuild the background. This is done regularly, whenever new projects have
+been mapped; see `docs/BACKGROUND.md` section 8 for the checks and the build
+log:
 
 ```
 Rscript bin/wgsTriageBackground.R <QCDir> [--out <OutDir>]
@@ -138,8 +140,9 @@ move.
 
 ## A note on the background
 
-The archive is not clean. 23 of 454 historical samples fall below these
-thresholds, all in `ReMap_260130`, at 7 to 22% chimeric read pairs. That cohort
+The archive is not clean. When the thresholds were set in July 2026, 23 of 454
+historical samples fell below them, all in `ReMap_260130`, at 7 to 22%
+chimeric read pairs. That cohort
 predates Proj_16840_N and whether it was analysed and released is an open
 question, not a settled one.
 
