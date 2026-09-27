@@ -177,10 +177,7 @@ dat <- dat |>
 ##
 dat <- dat |>
     mutate(coverageFloor = unname(COVERAGE_WARN[sampleType]),
-           lowCoverage = !is.na(meanCoverage) & meanCoverage < coverageFloor,
-           ## Short form keeps the fixed-width console columns aligned. "?" is
-           ## deliberately not "N": an unclassifiable name is its own category.
-           tn = recode(sampleType, unknown = "?"))
+           lowCoverage = !is.na(meanCoverage) & meanCoverage < coverageFloor)
 
 ##
 ## Drop filter thresholds whose entire source is absent for this cohort. A missing multiqc
@@ -406,7 +403,7 @@ if (nFail > 0) {
     failedSamples |>
         mutate(line = sprintf("  %-21s %-4s %5.1f%% %5s %8s %8s%-4s %3d",
                               str_trunc(sample, 21),
-                              tn,
+                              sampleType,
                               pctChimeras,
                               if_else(is.na(chimeraFold), "", sprintf("(%.0fx)", chimeraFold)),
                               if_else(is.na(pctReadUsed), "n/a", sprintf("%.0f%%", pctReadUsed)),
@@ -425,7 +422,7 @@ if (any(dat$lowCoverage)) {
     addRaw(thin)
     lowCov |>
         mutate(line = sprintf("  %-21s %-4s %.0fx usable, below the %.0fx floor for %s",
-                              str_trunc(sample, 21), tn, meanCoverage,
+                              str_trunc(sample, 21), sampleType, meanCoverage,
                               coverageFloor, sampleType)) |>
         pull(line) |>
         walk(addRaw)
@@ -437,7 +434,7 @@ if (nWarn > 0) {
     addRaw("  SAMPLES NEEDING REVIEW")
     addRaw(thin)
     warnSamples |>
-        mutate(line = sprintf("  %-21s %-4s %s", str_trunc(sample, 21), tn,
+        mutate(line = sprintf("  %-21s %-4s %s", str_trunc(sample, 21), sampleType,
                               str_trunc(verdictReason, 45))) |>
         pull(line) |>
         walk(addRaw)
@@ -449,7 +446,7 @@ if (nIncomplete > 0) {
     addRaw("  SAMPLES NOT FULLY ASSESSED")
     addRaw(thin)
     incompleteSamples |>
-        mutate(line = sprintf("  %-21s %-4s %s", str_trunc(sample, 21), tn,
+        mutate(line = sprintf("  %-21s %-4s %s", str_trunc(sample, 21), sampleType,
                               str_trunc(verdictReason, 45))) |>
         pull(line) |>
         walk(addRaw)
