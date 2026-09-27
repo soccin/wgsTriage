@@ -533,7 +533,8 @@ tsvOut <- dat |>
            nFail, nWarn, nMissing, failedMetrics, warnedMetrics,
            any_of(c("pctChimeras", "pctSoftclip", "alignedFrac", "pctReadUsed", "supplementaryRate",
                     "pctProperlyPaired", "pctExcOverlap", "pctExcTotal",
-                    "meanCoverage", "medianCoverage", "coverageFloor", "lowCoverage",
+                    "pctExcAdapter", "pctExcMapq", "pctExcDupe", "pctExcBaseq", "pctExcCapped",
+                    "meanCoverage", "rawCoverage", "medianCoverage", "coverageFloor", "lowCoverage",
                     "insertSizeAverage", "pctImproperPairs", "totalReads",
                     "meanReadLength", "meanAlignedLength", "chimeraFold", "suppFold"))) |>
     arrange(verdict != "FAIL", desc(pctChimeras))
@@ -583,8 +584,12 @@ metricCells <- function(sampleName) {
         str_c(collapse = "")
 }
 
-cohortRows <- dat |>
-    arrange(match(verdict, c("FAIL", "INCOMPLETE", "WARN", "PASS")), desc(pctChimeras)) |>
+## Row order shared by the cohort and coverage loss tables, so a sample sits on
+## the same line in both.
+worstFirst <- dat |>
+    arrange(match(verdict, c("FAIL", "INCOMPLETE", "WARN", "PASS")), desc(pctChimeras))
+
+cohortRows <- worstFirst |>
     mutate(row = pmap_chr(list(sample, sampleType, verdict, meanCoverage, lowCoverage),
         \(s, t, v, cov, low) {
             covTxt <- if (is.na(cov)) "n/a" else sprintf("%.0fx", cov)
@@ -620,6 +625,74 @@ cohortColgroup <- str_c(
     '<col class="c-sample"><col class="c-tn">',
     glue('<col class="c-verdict" style="width:{verdictColWidth}">'),
     str_c(rep('<col>', nrow(usableThresholds) + 1L), collapse = ""))
+
+##
+## Coverage loss table. Picard excludes aligned bases from MEAN_COVERAGE for
+## several reasons and reports the fraction lost to each. Unpaired is left out:
+## it is near zero throughout the archive, and Total still includes it.
+##
+## Headings for the two gated losses come from THRESHOLDS and the rest from
+## PROVENANCE, so each column is labelled the same here as in the glossary.
+## Only the gated losses carry a status color; the others have no threshold.
+##
+lossColumns <- tribble(
+    ~metric,          ~sub,
+    "pctExcAdapter",  "Adapter sequence",
+    "pctExcMapq",     "Low mapping quality",
+    "pctExcDupe",     "Marked duplicates",
+    "pctExcBaseq",    "Low base quality",
+    "pctExcOverlap",  PLAIN[["pctExcOverlap"]],
+    "pctExcCapped",   "Above the depth cap",
+    "pctExcTotal",    PLAIN[["pctExcTotal"]]) |>
+    left_join(THRESHOLDS |> select(metric, gatedLabel = label), by = "metric") |>
+    left_join(PROVENANCE |> select(metric, provLabel = label), by = "metric") |>
+    mutate(label = coalesce(gatedLabel, provLabel)) |>
+    select(metric, label, sub)
+
+lossCells <- function(sampleName) {
+    row <- dat |> filter(sample == sampleName)
+    status <- thresholdResults |>
+        filter(sample == sampleName) |>
+        (\(r) set_names(r$status, r$metric))()
+    lossColumns |>
+        mutate(cell = map2_chr(metric, label, \(m, lab) {
+            v <- row[[m]]
+            cls <- if (is.na(v)) "smissing" else if (m %in% names(status)) statusClass(status[[m]]) else "spass"
+            valTxt <- if (is.na(v)) "n/a" else sprintf("%.2f%%", v)
+            glue('<td class="{cls}" data-label="{esc(lab)}"><span class="v">{valTxt}</span></td>')
+        })) |>
+        pull(cell) |>
+        str_c(collapse = "")
+}
+
+lossRows <- worstFirst |>
+    mutate(row = pmap_chr(list(sample, sampleType, meanCoverage, lowCoverage, rawCoverage),
+        \(s, t, cov, low, raw) {
+            covTxt <- if (is.na(cov)) "n/a" else sprintf("%.0fx", cov)
+            rawTxt <- if (is.na(raw)) "n/a" else sprintf("%.0fx", raw)
+            glue('<tr><td class="name" data-label="Sample">{esc(s)}</td>',
+                 '<td data-label="T/N">{t}</td>{lossCells(s)}',
+                 '<td class="{if (is.na(cov)) "smissing" else if (isTRUE(low)) "swarn" else "spass"}" data-label="Coverage">',
+                 '<span class="v">{covTxt}</span></td>',
+                 '<td class="{if (is.na(raw)) "smissing" else "spass"}" data-label="Raw coverage">',
+                 '<span class="v">{rawTxt}</span></td></tr>')
+        })) |>
+    pull(row) |>
+    str_c(collapse = "\n")
+
+lossHeader <- lossColumns |>
+    mutate(normTxt = if_else(is.na(refMedian[metric]), "",
+                             sprintf('<span class="norm">norm %.2f%%</span>', refMedian[metric])),
+           h = glue('<th>{esc(label)}<span class="sub">{esc(sub)}</span>{normTxt}</th>')) |>
+    pull(h) |>
+    str_c(collapse = "") |>
+    str_c(glue('<th>Coverage<span class="sub">Usable depth after filtering</span>',
+               '<span class="norm">floor T:{COVERAGE_WARN[["T"]]}x, N:{COVERAGE_WARN[["N"]]}x</span></th>',
+               '<th>Raw coverage<span class="sub">Depth before any loss</span></th>'))
+
+lossColgroup <- str_c(
+    '<col class="c-sample"><col class="c-tn">',
+    str_c(rep('<col>', nrow(lossColumns) + 2L), collapse = ""))
 
 pairRows <- if (nPairs > 0) {
     pairs |>
@@ -804,10 +877,11 @@ th .sub { display: block; font-weight: 400; color: var(--muted2); font-size: .68
 th .norm { display: block; font-weight: 600; color: var(--muted); font-size: .6875rem;
   margin-top: .25rem; font-variant-numeric: tabular-nums; }
 /*
- * The cohort table sizes its columns explicitly (colgroup) rather than from
- * content. Sample is wide; T/N and Verdict are narrow; the metric columns and
- * Coverage carry no width and so split the remaining space equally, which keeps
- * a short-valued column like "Split pairs" from collapsing to its content.
+ * The cohort and coverage loss tables size their columns explicitly (colgroup)
+ * rather than from content. Sample is wide; T/N and Verdict are narrow; the
+ * metric columns carry no width and so split the remaining space equally,
+ * which keeps a short-valued column like "Split pairs" from collapsing to its
+ * content.
  */
 .cohort { table-layout: fixed; }
 .cohort .c-sample { width: 12rem; }
@@ -950,6 +1024,19 @@ html <- glue('<!doctype html>
 <thead><tr><th>Sample</th><th>T/N</th><th>Verdict</th>{metricHeader}</tr></thead>
 <tbody>
 {cohortRows}
+</tbody>
+</table>
+
+<h2>Coverage losses</h2>
+<p class="meta">Same order as the Cohort table. Each loss is the percentage of aligned bases
+Picard excluded from the coverage count for that reason; Total also includes bases excluded
+as unpaired, which are not shown. Raw coverage is Coverage / (1 - Total loss), the depth
+before any exclusion.</p>
+<table class="cohort">
+{lossColgroup}
+<thead><tr><th>Sample</th><th>T/N</th>{lossHeader}</tr></thead>
+<tbody>
+{lossRows}
 </tbody>
 </table>
 

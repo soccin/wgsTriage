@@ -16,10 +16,11 @@ The report sent to the data provider. Sections in the order they appear.
 | Banner and counts | Cohort verdict and six headline counts. | Always. |
 | Notes | Incomplete cohort, reduced check set. | Cohort is incomplete, or a check's entire source is absent. |
 | `Cohort` | One row per sample: name, class, verdict, one cell per applied check, coverage. Each cell shows the measured value; the reference median for the column, and the coverage floors, sit in the column header. Ordered failures, incomplete, warnings, passes. | Every sample submitted. |
+| `Coverage losses` | One row per sample, in `Cohort` order: name, class, the seven Picard exclusion percentages shown (adapter, MAPQ, duplicate, base quality, overlap, capped, total), coverage, raw coverage. Overlap, total and coverage carry their status color; the rest are not gated. | Every sample submitted. |
 | `Tumor / normal pairs` | Patient, tumor, normal, both insert sizes, ratio, verdict, reason. | All inferred pairs. States when none could be inferred. |
 | `Per-sample detail for the data provider` | One card per sample: the checks it failed, each value against the reference median, and the effect on downstream analysis. | Verdict `FAIL`. |
 | `Thresholds applied` | Each check with its plain-language description, fail and warn values, reference median, and the number of background samples behind that median. | The checks evaluated for this cohort. |
-| `Where each number comes from` | Report label, internal name, source tool and file, source field(s), transform. Generated from the checks applied plus `PROVENANCE` in `R/qcLib.R`. | The checks evaluated, plus `insertSizeAverage`, `insertRatio`, `sampleType` and `patient`. |
+| `Where each number comes from` | Report label, internal name, source tool and file, source field(s), transform. Generated from the checks applied plus `PROVENANCE` in `R/qcLib.R`. | The checks evaluated, plus `rawCoverage`, the five ungated coverage losses, `insertSizeAverage`, `insertRatio`, `sampleType` and `patient`. |
 
 Column headings in the `Cohort` table are the report labels listed in section 4.
 
@@ -123,6 +124,7 @@ against its fixed threshold alone.
 | Column | Definition |
 |---|---|
 | `meanCoverage` | wgs, `MEAN_COVERAGE`. Depth after Picard's quality filtering, not raw depth. |
+| `rawCoverage` | **derived**: `MEAN_COVERAGE / (1 - PCT_EXC_TOTAL)`. Depth before any of Picard's exclusions. Report label "Raw coverage". Not gated. |
 | `medianCoverage` | wgs, `MEDIAN_COVERAGE`. Not gated. |
 | `coverageFloor` | The floor for this sample's class: 30x for `N`, 80x for `T`, 80x for `unknown`. |
 | `lowCoverage` | `TRUE` when `meanCoverage` is below `coverageFloor`. |
@@ -130,6 +132,21 @@ against its fixed threshold alone.
 The coverage floor is the eighth check. It is defined in `bin/wgsTriage.R`
 rather than in `THRESHOLDS`, since its value varies by sample class. It warns
 and never fails. A warning here counts toward `WARN_ESCALATION`.
+
+### Coverage losses
+
+The fraction of aligned bases Picard excluded from `MEAN_COVERAGE` for each
+reason. Shown with `pctExcOverlap` and `pctExcTotal` in the HTML `Coverage
+losses` table. `PCT_EXC_UNPAIRED` is not read; it is near zero and
+`pctExcTotal` already includes it. None of these five is gated.
+
+| Column | Report label | Source | Field(s) | Transform |
+|---|---|---|---|---|
+| `pctExcAdapter` | Adapter loss | wgs | `PCT_EXC_ADAPTER` | x 100 |
+| `pctExcMapq` | MAPQ loss | wgs | `PCT_EXC_MAPQ` | x 100 |
+| `pctExcDupe` | Duplicate loss | wgs | `PCT_EXC_DUPE` | x 100 |
+| `pctExcBaseq` | Base quality loss | wgs | `PCT_EXC_BASEQ` | x 100 |
+| `pctExcCapped` | Capped loss | wgs | `PCT_EXC_CAPPED` | x 100 |
 
 ### Ungated metrics
 

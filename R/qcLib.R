@@ -119,6 +119,12 @@ PROVENANCE <- tribble(
     "pctExcOverlap",      NA,                    "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_OVERLAP",                                  "x 100",                                                   FALSE,
     "pctExcTotal",        NA,                    "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_TOTAL",                                    "x 100",                                                   FALSE,
     "meanCoverage",       NA,                    "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "MEAN_COVERAGE",                                    "none",                                                    FALSE,
+    "rawCoverage",        "Raw coverage",        "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "MEAN_COVERAGE, PCT_EXC_TOTAL",                     "MEAN_COVERAGE / (1 - PCT_EXC_TOTAL)",                     TRUE,
+    "pctExcAdapter",      "Adapter loss",        "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_ADAPTER",                                  "x 100",                                                   FALSE,
+    "pctExcMapq",         "MAPQ loss",           "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_MAPQ",                                     "x 100",                                                   FALSE,
+    "pctExcDupe",         "Duplicate loss",      "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_DUPE",                                     "x 100",                                                   FALSE,
+    "pctExcBaseq",        "Base quality loss",   "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_BASEQ",                                    "x 100",                                                   FALSE,
+    "pctExcCapped",       "Capped loss",         "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_CAPPED",                                   "x 100",                                                   FALSE,
     "insertSizeAverage",  "Insert T / Insert N", "samtools stats, via multiqc",           "multiqc_samtools_stats.txt",    "insert_size_average",                              "none",                                                    FALSE,
     "insertRatio",        "Ratio",               "computed by wgsTriage",                 NA,                              "insertSizeAverage, tumor and normal of one patient", "larger / smaller",                                       TRUE,
     "sampleType",         "T/N",                 "computed by wgsTriage",                 NA,                              "sample name",                                      "regex on the trailing N / T token, else unknown",          TRUE,
@@ -286,20 +292,33 @@ readAsmMetrics <- function(path) {
         strandBalance     = pickColumn(row, "STRAND_BALANCE"))
 }
 
+##
 ## Read one sample's Picard WGS coverage metrics.
+##
+## MEAN_COVERAGE counts only the bases that survived Picard's exclusions, and
+## PCT_EXC_TOTAL is the fraction of aligned bases excluded, so the depth before
+## any exclusion is MEAN_COVERAGE / (1 - PCT_EXC_TOTAL).
+##
 readWgsMetrics <- function(path) {
     dat <- readPicardMetrics(path)
     if (is.null(dat) || !"MEAN_COVERAGE" %in% names(dat)) return(NULL)
     row <- dat |> slice(1)
 
+    meanCoverage <- pickColumn(row, "MEAN_COVERAGE")
+    excTotal     <- pickColumn(row, "PCT_EXC_TOTAL")
+
     tibble(
-        meanCoverage   = pickColumn(row, "MEAN_COVERAGE"),
+        meanCoverage   = meanCoverage,
+        rawCoverage    = meanCoverage / (1 - excTotal),
         medianCoverage = pickColumn(row, "MEDIAN_COVERAGE"),
         sdCoverage     = pickColumn(row, "SD_COVERAGE"),
-        pctExcOverlap  = pickColumn(row, "PCT_EXC_OVERLAP") * 100,
-        pctExcDupe     = pickColumn(row, "PCT_EXC_DUPE") * 100,
+        pctExcAdapter  = pickColumn(row, "PCT_EXC_ADAPTER") * 100,
         pctExcMapq     = pickColumn(row, "PCT_EXC_MAPQ") * 100,
-        pctExcTotal    = pickColumn(row, "PCT_EXC_TOTAL") * 100,
+        pctExcDupe     = pickColumn(row, "PCT_EXC_DUPE") * 100,
+        pctExcBaseq    = pickColumn(row, "PCT_EXC_BASEQ") * 100,
+        pctExcOverlap  = pickColumn(row, "PCT_EXC_OVERLAP") * 100,
+        pctExcCapped   = pickColumn(row, "PCT_EXC_CAPPED") * 100,
+        pctExcTotal    = excTotal * 100,
         pct30x         = pickColumn(row, "PCT_30X") * 100)
 }
 
