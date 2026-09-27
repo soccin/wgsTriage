@@ -984,6 +984,17 @@ scriptBlock <- '
 })();
 '
 
+## Only needed when the background loaded has no pctReadUsed samples, which is
+## the case for any background built solely from older Picard output.
+readUsedNote <- if (is.na(refMedian["pctReadUsed"])) {
+    '<p class="meta"><code>pctReadUsed</code> has no clean-sample reference in the table above.
+The background holds no alignment summary file from a Picard version that writes
+<code>MEAN_ALIGNED_READ_LENGTH</code>, so the metric is judged against its fixed
+threshold alone.</p>'
+} else {
+    ""
+}
+
 html <- glue('<!doctype html>
 <html lang="en" data-theme="light">
 <head>
@@ -1086,10 +1097,7 @@ shown. <code>pctReadUsed</code> is the percentage of each delivered read that su
 alignment; no Picard field reports it directly. Its two operands,
 <code>MEAN_ALIGNED_READ_LENGTH</code> and <code>MEAN_READ_LENGTH</code>, are both in the
 alignment summary file.</p>
-<p class="meta"><code>pctReadUsed</code> has no clean-sample reference in the table above.
-Every archived alignment summary file was written by a Picard version predating
-<code>MEAN_ALIGNED_READ_LENGTH</code>, so the metric is judged against its fixed
-threshold alone.</p>
+{readUsedNote}
 <p class="meta"><code>wgsTriage_samples.tsv</code> also carries <code>alignedFrac</code>,
 the same quantity as <code>pctReadUsed</code> unscaled: <code>pctReadUsed</code> is
 <code>alignedFrac</code> x 100. Every column of that file and of

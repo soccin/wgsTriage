@@ -1,9 +1,13 @@
 # The background distribution: how it is gathered and computed
 
-Status: work in progress. This describes the importer as it stands on
-2026-07-20 and the state of the background files currently committed. It is
-written to be read before rebuilding the background, and section 6 is the part
-that matters if you are about to do that.
+The background is rebuilt regularly, as new projects are mapped. This document
+describes how the importer works and how to check a new build. It does not
+quote the numbers of any one build, except in the build log in section 5, which
+gets one row per rebuild. Section 6 is the part to read before committing a
+rebuild, and section 8 is the procedure.
+
+Numbers elsewhere in this document are examples from a named build, labeled
+with its date.
 
 Companion documents: `docs/METHODS.md` (where the thresholds come from),
 `docs/DECISIONS.md` (design rules). The producer is
@@ -166,7 +170,7 @@ the same functions the report applies to a current cohort, so the background
 carries verdicts on the same terms. Those functions key on a single column, so
 they are passed a project-qualified `uid` of the form `project::sample`. Keying
 on the bare name would merge verdicts across unrelated runs; roughly a hundred
-names recur across projects in this archive.
+names recurred across projects in the 2026-07-20 build.
 
 ### 3.6 What counts as a reference sample
 
@@ -179,9 +183,10 @@ referenceTier   = "full" if both pctChimeras and meanCoverage are present,
 The gate is **what a sample failed**, not which files it happens to have. An
 earlier rule also required both Picard files present. That sounds conservative
 and is not: a sample missing one of its two files then contributed to no range
-at all, not even the ranges built from the file it did have. On an archive
-where alignment and coverage metrics were collected into different subtrees,
-that rule reduced 401 usable coverage samples to a coverage range built from 2.
+at all, not even the ranges built from the file it did have. On the 2026-07-20
+build, whose archive held alignment and coverage metrics in different
+subtrees, that rule reduced 401 usable coverage samples to a coverage range
+built from 2.
 
 `referenceTier` keeps the distinction visible rather than resolving it, and the
 full/partial ratio is the single most useful indicator of how well vetted a
@@ -229,50 +234,40 @@ where they are routinely missed.
 
 ---
 
-## 5. Current state of the committed background
+## 5. The committed background and the build log
 
-The files under `data/background/` were built from the **QCDataV2** archive
-(confirmed from the paths in the audit). Headline numbers:
+The three committed files under `data/background/` always describe the most
+recent build. Read the current state from them rather than from any document:
 
+- `backgroundStats.tsv`, column `n`: how many reference samples each range
+  rests on.
+- `backgroundMetricCoverage.tsv`: how much of the archive carries each metric
+  at all.
+- `backgroundCoverageStats.tsv`: coverage by sample class.
+
+The per-sample counts below are not in any committed file. They come from the
+console summary, or from the gitignored `backgroundSamples.tsv`:
+
+```r
+read_tsv("data/background/backgroundSamples.tsv", show_col_types = FALSE) |>
+    summarize(projects = n_distinct(project), samples = n(),
+              reference = sum(referenceSample),
+              fullTier = sum(referenceSample & referenceTier == "full"),
+              notReference = sum(!referenceSample))
 ```
-samples            621        projects  17
-reference samples  579        of which "full" tier:  2
-below threshold     42
-```
 
-Per-metric availability across all 621 samples:
+### Build log
 
-| Metric | n in range | % of archive |
-|---|---|---|
-| supplementaryRate, pctProperlyPaired, insertSizeAverage, interChromRate | 470 | 82.4 |
-| meanCoverage, pctExcOverlap, pctExcTotal, pctExcDupe | 374 | 64.6 |
-| pctChimeras, pctSoftclip, pctImproperPairs | 77 | 12.4 |
-| pctReadUsed | 11 | 1.8 |
+One row per committed rebuild. `Full tier` is the number of reference samples
+that carry both Picard files (section 6.5); it is the best single measure of
+how well vetted a build is.
 
-**This background is wide but weakly vetted, and that should be stated wherever
-its numbers are quoted.** Only 2 of 579 reference samples carry both Picard
-files. The archive holds 77 usable alignment-metrics samples against 374
-coverage samples, so the great majority of samples entering the coverage,
-insert-size and supplementary ranges were never checked for chimeras or
-soft-clipping at all — they pass the reference gate because those metrics are
-MISSING rather than because they are clean. The chimera range itself rests on
-77 samples, and `pctReadUsed` on 11.
+| Date | Archive | Projects | Samples | Reference | Full tier | Not reference | Notes |
+|---|---|---|---|---|---|---|---|
+| 2026-07-20 | QCDataV2 | 17 | 621 | 579 | 2 | 42 | Alignment-poor: 77 chimera samples, 11 for `pctReadUsed`. |
+| 2026-09-27 | `/home/soccin/Work` | 168 | 1487 | 1330 | 933 | 157 | First build scanning the working tree directly. |
 
-The samtools stage mix in this build is 413 `md`, 99 `recal`, 109 with no
-samtools row.
-
-Two project labels in the audit look wrong on inspection: `Umich10_Umich10_T`
-(a sample name that reached the label position) and `ReMap_260130`, which
-carries 271 of the 506 files and is a remapping batch rather than a cohort.
-Neither is fatal — the label only needs to be *consistent* across a sample's
-files to join correctly — but `ReMap_260130` means half the archive is one
-undifferentiated bucket, which weakens any per-project reasoning about it.
-
-The earlier `QCData` archive has substantially more alignment metrics (order
-400 asm files against QCDataV2's 88 discovered / 77 parsed). Whether QCDataV2
-was meant to be the smaller archive is an open question for whoever assembled
-it; if it was not, rebuilding from `QCData`, or from the two combined, would
-produce a far better vetted background.
+Earlier builds are in the git history of `data/background/`.
 
 ---
 
@@ -297,6 +292,12 @@ read_tsv("<out>/backgroundImportAudit.tsv") |> count(kind, project) |> print(n =
 Symptoms: a label that is a sample name, a filename, or a bare batch token; two
 known cohorts collapsed into one row; one known cohort spread over several.
 
+Example from the 2026-07-20 build: `Umich10_Umich10_T` was a sample name that
+reached the label position, and `ReMap_260130` carried 271 of 506 files as a
+remapping batch rather than a cohort. Neither was fatal, since a label only
+needs to be consistent across a sample's files to join correctly, but a batch
+label makes per-project reasoning about those samples weak.
+
 ### 6.2 mtime is not provenance
 
 Duplicate resolution keeps the newest mtime. `rsync -a` and `cp -p` preserve
@@ -307,7 +308,7 @@ older data as the newest. Inspect every collision:
 read_tsv("<out>/backgroundImportAudit.tsv") |> filter(disposition == "supersededDuplicate")
 ```
 
-On QCDataV2 this correctly kept `results/r_002/mapping` (2026-06-11) over
+In the 2026-07-20 build (QCDataV2) this correctly kept `results/r_002/mapping` (2026-06-11) over
 `Map/out` (2026-05-26) for 11 Proj_17495_I samples.
 
 ### 6.3 Adjudicate cross-project name collisions
@@ -343,7 +344,8 @@ validated against evidence that excludes the thing it is meant to catch.
 
 With `referenceTier == "partial"`, a sample with only coverage metrics enters
 the coverage range without ever being checked for chimeras. Read the two
-reference-sample lines in the console summary together:
+reference-sample lines in the console summary together. From the 2026-07-20
+build:
 
 ```
 Reference samples   579
@@ -351,7 +353,7 @@ Reference samples   579
 ```
 
 A ratio like that one is a legitimate import and a weak background. Say so in
-any report that quotes the ranges.
+any report that quotes the ranges, and record the ratio in the build log.
 
 ### 6.6 Contamination fraction
 
@@ -359,24 +361,28 @@ The design assumption is that defective cohorts are excluded *by the
 thresholds*. A defective cohort that passes every threshold silently widens the
 ranges, and robust statistics are not sufficient protection when the
 contaminated fraction is large and concentrated in one cohort. Review
-`backgroundFlagged.tsv` against expectation: 42 failing samples in the current
-build.
+`backgroundFlagged.tsv` against expectation, and compare the `Not reference`
+count with the previous row of the build log. A large jump means either a new
+defective cohort or a change in how samples are being read.
 
 ### 6.7 Thin metrics
 
 A range built from a handful of samples is not a range. Always read
 `backgroundMetricCoverage.tsv` alongside `backgroundStats.tsv`. `pctReadUsed`
-was absent archive-wide because older Picard lacks `MEAN_ALIGNED_READ_LENGTH`;
-QCDataV2 supplied the first 11 samples for it, so this resolves as new projects
-accumulate rather than needing a fix.
+is the usual thin metric: older Picard does not emit
+`MEAN_ALIGNED_READ_LENGTH`, so only newer projects contribute to it. Its `n`
+grows with each rebuild rather than needing a fix.
 
 ### 6.8 Smaller traps
 
 - Symlinked directories are not followed. An archive assembled from symlinked
   cohort directories imports as empty.
 - Manifest files are ignored by design; the importer scans the tree only.
-- `docs/METHODS.md` quotes concrete numbers from the background. Regenerating
-  it invalidates them; check them again after any rebuild.
+- `docs/METHODS.md`, `docs/DECISIONS.md` and `README.md` quote archive
+  numbers from July 2026 as the evidence each threshold was set on. They are
+  dated and are not updated on a rebuild. If a new build contradicts one, for
+  example a clean range that now reaches a threshold, the threshold needs
+  review; the document does not.
 
 ---
 
@@ -384,27 +390,21 @@ accumulate rather than needing a fix.
 
 Roughly in order of how much they matter.
 
-1. **The committed background is built from the weaker archive.** 2 of 579
-   reference samples are fully vetted. The first improvement is not a code
-   change: confirm which archive is meant to be authoritative and rebuild from
-   it. Combining `QCData` and `QCDataV2` would need the duplicate and
-   cross-project machinery to be re-checked, since the same cohorts appear in
-   both, but the machinery exists for exactly that case.
-
-2. **`wgsTriage.R` reports `max(refN)` as the background size.** One line
+1. **`wgsTriage.R` reports `max(refN)` as the background size.** One line
    in the console summary quotes the largest per-metric `n` as "reference
-   ranges from N previously mapped samples". With the current build that
-   prints 470 while the chimera comparison beside it rests on 77. It should
+   ranges from N previously mapped samples". On the 2026-07-20 build that
+   printed 470 while the chimera comparison beside it rested on 77. It should
    quote the per-metric `n`, or a range, not the maximum.
 
-3. **No provenance record in the outputs.** Nothing in `backgroundStats.tsv`
+2. **No provenance record in the outputs.** Nothing in `backgroundStats.tsv`
    records which archive it came from, when, or with which version of the
-   importer — the archive identity above had to be recovered from the audit
-   file, which is gitignored and therefore absent from a clean checkout. A
-   header comment or a small `backgroundProvenance.tsv` carrying the archive
-   path, run date, `WGSTRIAGE_VERSION` and the sample counts would close this.
+   importer. The build log in section 5 records this by hand, which depends on
+   someone remembering to add the row. A header comment or a small
+   `backgroundProvenance.tsv` carrying the archive path, run date,
+   `WGSTRIAGE_VERSION` and the sample counts would make it automatic, and the
+   build log could then be generated from it.
 
-4. **The quantiles and the per-class coverage table are unused.** They are
+3. **The quantiles and the per-class coverage table are unused.** They are
    computed, and two of the three committed files are never read by anything.
    Either the consumer should use the spread (a fold-change against the median
    says nothing about how tight the distribution is; q05-q95 or the MAD would),
@@ -412,32 +412,32 @@ Roughly in order of how much they matter.
    the better change: `foldOf()` currently treats a metric with a 6x spread the
    same as one spanning 0.09 to 0.16.
 
-5. **`referenceTier` is recorded but not acted on.** Nothing weights or
+4. **`referenceTier` is recorded but not acted on.** Nothing weights or
    segregates partial samples, and no output surfaces the tier breakdown per
    metric. At minimum, `backgroundMetricCoverage.tsv` could carry an
    `nFullTier` column so the thinness of the vetting is visible per metric
    rather than only in aggregate.
 
-6. **`SCAFFOLD_DIR` is a heuristic with no test.** The failure mode is silent
+5. **`SCAFFOLD_DIR` is a heuristic with no test.** The failure mode is silent
    and it changes the join key. A small fixture tree exercising over-walking
    and under-walking, asserting the expected labels, would lock this down; it
    is the piece most likely to break on a new archive layout.
 
-7. **Two samtools readers now exist.** `readMultiqcSamtoolsAny` in the
+6. **Two samtools readers now exist.** `readMultiqcSamtoolsAny` in the
    importer and `readMultiqcSamtools` in qcLib differ in stage handling and in
    tolerance of missing columns, so the background and a current cohort are not
    read on identical terms. This was a deliberate scope constraint during the
    rewrite, not a design decision. The qcLib reader should probably adopt the
    tolerant behaviour and the local copy be deleted.
 
-8. **Robustness is proven but not tested.** A hostile-archive generator
+7. **Robustness is proven but not tested.** A hostile-archive generator
    (zero-byte, truncated, binary, unreadable, permission-denied, duplicate,
    dotted names, paths with spaces, multiqc with no `.recal`/`.md`, missing
    columns, empty) was used to demonstrate graceful degradation, but it was a
    scratch script and is not in the repository. Promoting it into `tests/`
    would keep that behaviour from regressing.
 
-9. **The importer is around 840 lines in one file.** Discovery, parsing,
+8. **The importer is around 840 lines in one file.** Discovery, parsing,
    joining, evaluation, aggregation and console rendering are all in it. It is
    readable, but the rendering block in particular has no reason to live beside
    the join logic.
@@ -445,6 +445,9 @@ Roughly in order of how much they matter.
 ---
 
 ## 8. Rebuilding
+
+Rebuild whenever new projects have been mapped. There is no fixed schedule;
+the build log in section 5 shows when it was last done.
 
 ```bash
 Rscript bin/wgsTriageBackground.R <QCDir> [--out <OutDir>]
@@ -461,5 +464,8 @@ After a rebuild:
 2. Re-run the threshold tests: `Rscript tests/testThresholds.R`.
 3. Confirm the consumer still works against the new background:
    `Rscript bin/wgsTriage.R tests/fixtures/miniCohort --background <OutDir> --out <TmpDir>`.
-4. Re-check the concrete numbers quoted in `docs/METHODS.md` and in section 5
-   of this document.
+4. Add a row to the build log in section 5, using the snippet there, and
+   commit it together with the three aggregate files.
+5. Compare the new ranges against the thresholds in `R/qcLib.R`. A clean-sample
+   range that now reaches a threshold is a reason to review that threshold.
+   The July 2026 evidence quoted in `docs/METHODS.md` stays as it is.

@@ -4,6 +4,10 @@ First pass, written 2026-07-18. Everything below is a judgement call I made to
 keep moving. The ones under "Needs your call" are the ones I would not want left
 to me.
 
+Archive numbers below are as of July 2026, when these decisions were made. They
+are not updated when the background is rebuilt, which happens regularly; see
+the build log in `docs/BACKGROUND.md` section 5 for current counts.
+
 ---
 
 ## Needs your call
@@ -53,7 +57,7 @@ derived from those samples are suspect on the same grounds as Proj_16840_N.
 
 Three simultaneous warnings promotes a sample to FAIL. The rationale is sound
 (these metrics are not independent and move together under real degradation) but
-the number 3 is arbitrary. It currently promotes exactly one archive sample
+the number 3 is arbitrary. When set, it promoted exactly one archive sample
 (`Umich10_T` in `ReMap_260130`, 3.78% chimeras with five warnings). Change
 `WARN_ESCALATION` in `R/qcLib.R` if you disagree.
 
@@ -136,12 +140,16 @@ Per section 0 of the QC report. Nothing in this tool touches it.
 
 ## Known gaps
 
-### No background for `pctReadUsed`
+### No background for `pctReadUsed` (resolved by rebuilds)
 
 Every archived `.asm.txt` was produced by an older Picard that does not emit
-`MEAN_ALIGNED_READ_LENGTH`. All 421 lack it; the current project has it. So the
-read-used gate runs on its fixed threshold with no historical context, and the
-report says so. This will resolve itself as new projects accumulate.
+`MEAN_ALIGNED_READ_LENGTH`. All 421 lacked it; the current project had it. So
+the read-used gate ran on its fixed threshold with no historical context, and
+the report said so.
+
+Update 2026-09-27: newer projects carry the field, and the 2026-09-27 build has
+601 reference samples for `pctReadUsed`, so the report now shows a reference
+median for it. The threshold itself is unchanged.
 
 The metric is gated as a percentage (`pctReadUsed`, fail below 95%) rather than
 as the fraction section 5.3 describes. Same quantity, but a bare `0.86` sitting
@@ -150,13 +158,15 @@ raw `alignedFrac` is still written to the TSV.
 
 ### Samtools background is no longer thin
 
-The importer now reads the whole archive, `.md` rows included, so 512 of 621
-samples (82.4%) carry samtools metrics, against 98 of 454 before. A defective
-distribution is present too (clean 0.094 to 0.389%, archive up to 15.4%), so
-`supplementaryRate` and `pctProperlyPaired` rest on observed separation rather
-than the clean range plus a margin. See `docs/METHODS.md` section 3 and
-`docs/BACKGROUND.md` section 5. The vetting weakness that remains is in the
-alignment metrics, not samtools: only 2 of 579 reference samples are full-tier.
+The importer now reads the whole archive, `.md` rows included. On the
+2026-07-20 build that gave samtools metrics for 512 of 621 samples (82.4%),
+against 98 of 454 before. A defective distribution was present too (clean
+0.094 to 0.389%, archive up to 15.4%), so `supplementaryRate` and
+`pctProperlyPaired` rest on observed separation rather than the clean range
+plus a margin. See `docs/METHODS.md` section 3. The vetting weakness left on
+that build was in the alignment metrics, not samtools: only 2 of 579 reference
+samples were full-tier. The 2026-09-27 build has 933 of 1330; the build log in
+`docs/BACKGROUND.md` section 5 tracks this per rebuild.
 
 ### Coverage floors are chosen, not derived
 
@@ -172,8 +182,8 @@ too shallow to analyse.
 
 Adopting them moved no verdicts: seven samples in Proj_16840_N fall below floor
 and all seven already failed, and no archived sample gains a third warning from
-the check. They fire on 12.2% of the 401 archived samples carrying a coverage
-figure, against 1.0% before. See `docs/METHODS.md` section 5.
+the check. They fired on 12.2% of the 401 samples carrying a coverage figure in
+the 2026-07-20 build, against 1.0% before. See `docs/METHODS.md` section 5.
 
 ### The 1.5x insert ratio is unconfirmed
 
