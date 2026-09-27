@@ -105,9 +105,9 @@ does not want to hear it. That was worth the extra parsing.
 ### Tumor/normal inference is name-based and fails loudly
 
 Regex on the `_N01` / `_T01` / `-N` / trailing `N` patterns. Works on every
-sample in Proj_16840_N and Proj_17495_I. Returns `unknown` rather than guessing,
-and unknown is displayed as `?`, never silently treated as normal. Unpaired
-samples are named in the report.
+sample in Proj_16840_N and Proj_17495_I. Returns `UNK` rather than guessing,
+never silently treated as normal. Unpaired samples are named in the report.
+(Until 2026-09-27 the value was `unknown`, shown as `?` in the console.)
 
 This will mis-handle unusual naming. That case is handled by `--pairing`, a TSV
 with `NORMAL_ID` and `TUMOR_ID` columns that overrides name-based class for

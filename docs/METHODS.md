@@ -241,7 +241,7 @@ wrong report.
 ### Pair rules
 
 Tumor and normal are inferred from sample names by pattern. Names that carry no
-recognisable marker return `unknown` and are displayed as `?`. They are never
+recognisable marker are classed `UNK`, in every output. They are never
 silently treated as normal, and unpaired samples are named in the report.
 
 A pair fails if either member fails, or if the two insert size distributions

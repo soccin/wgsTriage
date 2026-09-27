@@ -81,7 +81,7 @@ WARN_ESCALATION <- 3
 ## A sample whose class could not be read from its name is held to the tumor
 ## floor. That is the stricter of the two: an unreadable name is a reason to
 ## look, not a reason to apply the more forgiving threshold.
-COVERAGE_WARN <- c(N = 30, T = 80, unknown = 80)
+COVERAGE_WARN <- c(N = 30, T = 80, UNK = 80)
 
 ## Tumor and normal insert size distributions must be comparable or Facets
 ## produces a result that is wrong without crashing. Section 5.6; the 1.5x
@@ -127,7 +127,7 @@ PROVENANCE <- tribble(
     "pctExcCapped",       "Capped loss",         "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_CAPPED",                                   "x 100",                                                   FALSE,
     "insertSizeAverage",  "Insert T / Insert N", "samtools stats, via multiqc",           "multiqc_samtools_stats.txt",    "insert_size_average",                              "none",                                                    FALSE,
     "insertRatio",        "Ratio",               "computed by wgsTriage",                 NA,                              "insertSizeAverage, tumor and normal of one patient", "larger / smaller",                                       TRUE,
-    "sampleType",         "T/N",                 "computed by wgsTriage",                 NA,                              "sample name",                                      "regex on the trailing N / T token, else unknown",          TRUE,
+    "sampleType",         "T/N",                 "computed by wgsTriage",                 NA,                              "sample name",                                      "regex on the trailing N / T token, else UNK",              TRUE,
     "patient",            "Patient",             "computed by wgsTriage",                 NA,                              "sample name",                                      "sample name with the trailing N / T token removed",        TRUE)
 
 ##
@@ -169,14 +169,14 @@ projectFromMetricsPath <- function(path) {
 ##
 ## Tumor/normal class inferred from the sample name. Naming is inconsistent
 ## across the archive (_N01, _N, -N, trailing N, optional _D suffix), so this
-## returns "unknown" rather than guessing when no marker is present. Callers
-## must treat "unknown" as a real category and not as normal.
+## returns "UNK" rather than guessing when no marker is present. Callers
+## must treat "UNK" as a real category and not as normal.
 ##
 classifySampleType <- function(sample) {
     case_when(
         str_detect(sample, "[._-]?N[0-9]*([._-]D[0-9]*)?$") ~ "N",
         str_detect(sample, "[._-]?T[0-9]*([._-]D[0-9]*)?$") ~ "T",
-        .default = "unknown")
+        .default = "UNK")
 }
 
 ## Patient stem is the sample name with the tumor/normal token removed, used to

@@ -82,7 +82,7 @@ not be read appears with empty values rather than being omitted.
 |---|---|
 | `project` | The `--project` argument, or the directory containing `<MapDir>`. |
 | `sample` | File basename with the `.asm.txt` / `.wgs.txt` extension and any `.smap`, `.md` or `.recal` suffix removed. |
-| `sampleType` | Sample class: `N`, `T`, or `unknown`. From the sample-name regex by default; overridden by `--pairing` when the sample is listed as `NORMAL_ID` or `TUMOR_ID`. |
+| `sampleType` | Sample class: `N`, `T`, or `UNK` (unknown). From the sample-name regex by default; overridden by `--pairing` when the sample is listed as `NORMAL_ID` or `TUMOR_ID`. |
 | `patient` | Pairing key. By default the sample name with its trailing class token removed (`APTL_MDA012_N02` and `APTL_MDA012_T01` both reduce to `APTL_MDA012`). With `--pairing`, listed normals keep their own ID and listed tumors inherit the `NORMAL_ID` they are paired with. |
 
 ### Verdict
@@ -127,7 +127,7 @@ alone.
 | `meanCoverage` | wgs, `MEAN_COVERAGE`. Depth after Picard's quality filtering, not raw depth. |
 | `rawCoverage` | **derived**: `MEAN_COVERAGE / (1 - PCT_EXC_TOTAL)`. Depth before any of Picard's exclusions. Report label "Raw coverage". Not gated. |
 | `medianCoverage` | wgs, `MEDIAN_COVERAGE`. Not gated. |
-| `coverageFloor` | The floor for this sample's class: 30x for `N`, 80x for `T`, 80x for `unknown`. |
+| `coverageFloor` | The floor for this sample's class: 30x for `N`, 80x for `T`, 80x for `UNK`. |
 | `lowCoverage` | `TRUE` when `meanCoverage` is below `coverageFloor`. |
 
 The coverage floor is the eighth check. It is defined in `bin/wgsTriage.R`
@@ -173,7 +173,7 @@ reference. Both metrics above are `high`.
 
 One row per tumor/normal pair, matched on `patient` between a sample classified
 `T` and one classified `N`. A patient with several tumors contributes several
-rows. Samples classified `unknown` form no pair.
+rows. Samples classified `UNK` form no pair.
 
 | Column | Definition |
 |---|---|
