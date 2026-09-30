@@ -29,6 +29,7 @@ docs/NORMAL_BAM_QC_REPORT.md  the original analysis the thresholds derive from
 TODO_260721.md              outstanding work, kept at the root to stay visible
 tests/testThresholds.R      smoke test over synthetic fixtures
 tests/testGlossary.R        fails when an output column is undocumented
+tests/testBackgroundSelfExclude.R  background importer skips its own fixtures
 ```
 
 ## Usage

@@ -56,6 +56,19 @@ under `<proj>/out/metrics`, `<proj>/Map/out/metrics`,
 `<proj>/results/r_002/mapping/metrics` and, where an `rsync -R` copy was made,
 buried under a replica of the source absolute path.
 
+The one exception is the tool's own files. A metric file is skipped if a
+directory named exactly `wgsTriage` lies between `<QCDir>` and the file, or if
+its path contains `tests/fixtures` as two consecutive directories. Every
+checkout ships a synthetic test cohort, `tests/fixtures/miniCohort`, with real
+metric file names; the 2026-09-27 build scanned a working tree holding ten
+clones and imported it as a project called `miniCohort`. The rules match whole
+path components, so a cohort whose name merely contains `tests` or `wgsTriage`
+is kept. The `wgsTriage` rule looks only below `<QCDir>` because the archive
+conventionally sits inside a checkout as `./QCData`. Skipped files are listed
+in the audit with disposition `excludedSelf`, counted as `excluded (self)` in
+the console summary, and raise a warning. A separate warning fires when
+`<QCDir>` contains the checkout running the import.
+
 The archive is read only. Nothing outside the tree is followed: manifest files
 listing paths elsewhere are ignored by design, and `dir_ls(recurse = TRUE)`
 does not descend through symlinked directories.
@@ -68,7 +81,8 @@ Six stages, in execution order.
 
 ### 3.1 Discovery
 
-One recursive traversal, then classification by filename regex. Two identifiers
+One recursive traversal, then classification by filename regex, then removal
+of the tool's own files (section 2). Two identifiers
 are derived per file, and both are load-bearing because together they form the
 join key.
 
@@ -265,7 +279,8 @@ how well vetted a build is.
 | Date | Archive | Projects | Samples | Reference | Full tier | Not reference | Notes |
 |---|---|---|---|---|---|---|---|
 | 2026-07-20 | QCDataV2 | 17 | 621 | 579 | 2 | 42 | Alignment-poor: 77 chimera samples, 11 for `pctReadUsed`. |
-| 2026-09-27 | `/home/soccin/Work` | 168 | 1487 | 1330 | 933 | 157 | First build scanning the working tree directly. |
+| 2026-09-27 | `/home/soccin/Work` | 168 | 1487 | 1330 | 933 | 157 | First build scanning the working tree directly. Included the `miniCohort` test fixtures as a project. |
+| 2026-09-30 | `/data1/core001/work/bic/socci/Users/ElenitK` | 167 | 1485 | 1329 | 938 | 156 | Removes the `miniCohort` fixtures imported on 2026-09-27; 40 files from 8 clones excluded as `excludedSelf`. |
 
 Earlier builds are in the git history of `data/background/`.
 
@@ -437,7 +452,14 @@ Roughly in order of how much they matter.
    scratch script and is not in the repository. Promoting it into `tests/`
    would keep that behaviour from regressing.
 
-8. **The importer is around 840 lines in one file.** Discovery, parsing,
+8. **Self-exclusion is by directory name.** A checkout is recognized only by
+   a directory named exactly `wgsTriage`, and fixtures only by
+   `tests/fixtures`. A clone checked out under another name is still caught
+   through its fixtures, but anything else it carried that matched a metric
+   pattern would be imported. Detecting a checkout by a marker file such as
+   `bin/wgsTriageBackground.R` would not depend on the name.
+
+9. **The importer is around 900 lines in one file.** Discovery, parsing,
    joining, evaluation, aggregation and console rendering are all in it. It is
    readable, but the rendering block in particular has no reason to live beside
    the join logic.
@@ -461,7 +483,9 @@ archive.
 After a rebuild:
 
 1. Work through section 6, starting with the project labels.
-2. Re-run the threshold tests: `Rscript tests/testThresholds.R`.
+2. Re-run the threshold tests: `Rscript tests/testThresholds.R`. Check the
+   `excluded (self)` count in the console summary and the `excludedSelf`
+   rows in the audit; they should be wgsTriage checkouts and nothing else.
 3. Confirm the consumer still works against the new background:
    `Rscript bin/wgsTriage.R tests/fixtures/miniCohort --background <OutDir> --out <TmpDir>`.
 4. Add a row to the build log in section 5, using the snippet there, and
