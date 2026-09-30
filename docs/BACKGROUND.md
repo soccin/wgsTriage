@@ -279,7 +279,8 @@ how well vetted a build is.
 | Date | Archive | Projects | Samples | Reference | Full tier | Not reference | Notes |
 |---|---|---|---|---|---|---|---|
 | 2026-07-20 | QCDataV2 | 17 | 621 | 579 | 2 | 42 | Alignment-poor: 77 chimera samples, 11 for `pctReadUsed`. |
-| 2026-09-27 | `/home/soccin/Work` | 168 | 1487 | 1330 | 933 | 157 | First build scanning the working tree directly. |
+| 2026-09-27 | `/home/soccin/Work` | 168 | 1487 | 1330 | 933 | 157 | First build scanning the working tree directly. Included the `miniCohort` test fixtures as a project. |
+| 2026-09-30 | `/data1/core001/work/bic/socci/Users/ElenitK` | 167 | 1485 | 1329 | 938 | 156 | Removes the `miniCohort` fixtures imported on 2026-09-27; 40 files from 8 clones excluded as `excludedSelf`. |
 
 Earlier builds are in the git history of `data/background/`.
 
