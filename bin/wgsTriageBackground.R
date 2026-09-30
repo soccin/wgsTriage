@@ -60,8 +60,10 @@ Arguments:
                     for Picard <sample>.asm.txt and <sample>.wgs.txt, and for
                     multiqc_samtools_stats.txt. Layout is not assumed: any
                     arrangement of wrapper directories is accepted, and samples
-                    missing some of their files are still imported. Read only;
-                    nothing is modified.
+                    missing some of their files are still imported. Files
+                    inside a wgsTriage checkout or a tests/fixtures tree are
+                    skipped and listed in the audit. Read only; nothing is
+                    modified.
                     Default: ./QCData
 
 Options:
@@ -240,9 +242,79 @@ allFiles <- tryCatch(
         character(0)
     })
 
-asmFiles <- str_subset(allFiles, ASM_PATTERN)
-wgsFiles <- str_subset(allFiles, WGS_PATTERN)
-mqcFiles <- str_subset(allFiles, MQC_PATTERN)
+##
+## The tool's own files are not archive data. Every wgsTriage checkout ships a
+## synthetic test cohort under tests/fixtures with real metric file names, and
+## the 2026-09-27 build, which scanned a working tree holding ten clones,
+## imported it as a project called miniCohort. Such files are excluded here and
+## recorded in the audit as excludedSelf rather than dropped.
+##
+## Both rules match whole path components, never substrings, so a cohort
+## directory whose name merely contains "tests" or "wgsTriage" is kept. The
+## wgsTriage rule looks only below qcRoot, because the archive conventionally
+## sits inside a checkout as ./QCData. The tests/fixtures rule looks at the
+## whole path, so pointing <QCDir> at a checkout or its tests/ directory is
+## still caught.
+##
+## Returns the checkout (or fixture tree) root for each excluded path and NA
+## for every other path. The root is only used to count distinct clones.
+##
+SELF_DIR <- "wgsTriage"
+
+selfCheckoutOf <- function(paths, root) {
+    rootDepth <- length(path_split(path_abs(root))[[1]])
+    path_split(path_abs(paths)) |>
+        map_chr(\(p) {
+            dirs <- p[-length(p)]
+            atClone <- which(dirs == SELF_DIR & seq_along(dirs) > rootDepth)
+            atTests <- which(head(dirs, -1) == "tests" & dirs[-1] == "fixtures")
+            cut <- c(atClone, atTests - 1)
+            if (length(cut) == 0) NA_character_ else path_join(dirs[seq_len(min(cut))])
+        })
+}
+
+candidates <- allFiles[str_detect(allFiles, ASM_PATTERN) |
+                       str_detect(allFiles, WGS_PATTERN) |
+                       str_detect(allFiles, MQC_PATTERN)]
+selfCheckout <- selfCheckoutOf(candidates, qcRoot)
+excludedFiles <- candidates[!is.na(selfCheckout)]
+candidates <- candidates[is.na(selfCheckout)]
+
+asmFiles <- str_subset(candidates, ASM_PATTERN)
+wgsFiles <- str_subset(candidates, WGS_PATTERN)
+mqcFiles <- str_subset(candidates, MQC_PATTERN)
+
+## Same columns as the audit collectMetricFiles() emits, so the excluded files
+## sit in backgroundImportAudit.tsv beside everything else the scan considered.
+excludedAudit <- if (length(excludedFiles) == 0) tibble() else {
+    excludedSample <- sampleFromFile(excludedFiles)
+    excludedRaw <- rawSampleFromFile(excludedFiles)
+    tibble(
+        kind = case_when(str_detect(excludedFiles, ASM_PATTERN) ~ "asm",
+                         str_detect(excludedFiles, WGS_PATTERN) ~ "wgs",
+                         .default = "multiqc"),
+        path = excludedFiles,
+        project = pmap_chr(list(excludedFiles, excludedSample, excludedRaw),
+                           \(p, s, r) projectFromPath(p, s, r, qcRoot)),
+        sample = excludedSample,
+        mtime = file_info(excludedFiles)$modification_time,
+        parsed = FALSE,
+        disposition = "excludedSelf",
+        detail = str_c("inside a wgsTriage checkout or fixture tree: ",
+                       selfCheckout[!is.na(selfCheckout)]))
+}
+
+if (length(excludedFiles) > 0) {
+    nClones <- n_distinct(selfCheckout[!is.na(selfCheckout)])
+    warnImport("{length(excludedFiles)} metric file(s) inside {nClones} wgsTriage checkout(s) or test fixture tree(s) were excluded as the tool's own files, not archive samples. See backgroundImportAudit.tsv, disposition excludedSelf.")
+}
+
+## Scanning a tree that holds this checkout is how the fixtures got in. The
+## exclusion above makes it safe, but it usually means <QCDir> is not the
+## archive that was intended.
+if (path_has_parent(path_real(repoRoot), path_real(qcRoot))) {
+    warnImport("<QCDir> {qcRoot} contains this wgsTriage checkout ({path_real(repoRoot)}). Its own files were excluded, but check that <QCDir> is the intended archive.")
+}
 
 ## ---------------------------------------------------------------------------
 ## Parsing
@@ -472,7 +544,11 @@ picard <- picardJoin$data
 if (nrow(picard) == 0 && nrow(mqc) == 0) {
     found <- glue("{length(asmFiles)} alignment, {length(wgsFiles)} coverage, {length(mqcFiles)} multiqc")
     reason <- if (length(asmFiles) + length(wgsFiles) + length(mqcFiles) == 0) {
-        "No candidate files were found at all."
+        if (length(excludedFiles) > 0) {
+            glue("The only candidate files found ({length(excludedFiles)}) were inside wgsTriage checkouts or test fixture trees, and those are excluded.")
+        } else {
+            "No candidate files were found at all."
+        }
     } else {
         glue("Candidate files were found ({found}) but none of them could be read; see backgroundImportAudit.tsv.")
     }
@@ -695,7 +771,8 @@ metricCoverage <- background |>
 ## Import audit: one row per file the scan considered, whether or not it made it
 ## into the background, plus the duplicate and rescue decisions.
 ##
-fileAudit <- bind_rows(asmCollected$audit, wgsCollected$audit, mqcCollected$audit)
+fileAudit <- bind_rows(asmCollected$audit, wgsCollected$audit, mqcCollected$audit,
+                       excludedAudit)
 
 duplicateAudit <- bind_rows(asmResolved$dups, wgsResolved$dups, mqcResolved$dups)
 if (nrow(duplicateAudit) > 0) {
@@ -731,7 +808,8 @@ nRef <- sum(background$referenceSample)
 nRefFull <- sum(background$referenceSample & background$referenceTier == "full")
 nFailSamples <- sum(background$nFail > 0, na.rm = TRUE)
 nWarnSamples <- sum(background$nFail == 0 & background$nWarn > 0, na.rm = TRUE)
-nParseFail <- sum(!fileAudit$parsed)
+nExcluded <- sum(fileAudit$disposition == "excludedSelf")
+nParseFail <- sum(!fileAudit$parsed) - nExcluded
 nSuperseded <- sum(fileAudit$disposition == "supersededDuplicate")
 nCrossProject <- n_distinct(crossProject$sample)
 rule <- strrep("=", 74)
@@ -771,6 +849,7 @@ cat(sprintf("  %-22s %5d\n", "coverage only", sum(!hasAsm & hasWgs)))
 cat(sprintf("  %-22s %5d\n", "samtools metrics", sum(hasMqc)))
 if (nParseFail > 0)  cat(sprintf("  %-22s %5d   listed in backgroundImportAudit.tsv\n", "unreadable files", nParseFail))
 if (nSuperseded > 0) cat(sprintf("  %-22s %5d   older copies, newest kept\n", "superseded files", nSuperseded))
+if (nExcluded > 0)   cat(sprintf("  %-22s %5d   wgsTriage checkouts and test fixtures\n", "excluded (self)", nExcluded))
 if (nCrossProject > 0) cat(sprintf("  %-22s %5d   kept separate, see warnings\n", "name in 2+ projects", nCrossProject))
 cat("\n")
 
