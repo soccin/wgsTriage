@@ -54,6 +54,7 @@ pair.
 Usage:
   Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>]
                           [--project <Name>] [--pairing <File>]
+                          [--coverage <T,N>]
   Rscript bin/wgsTriage.R --help
 
 Arguments:
@@ -75,6 +76,9 @@ Options:
                          name-based tumor/normal class for listed samples and
                          defines which samples form pairs. Unlisted samples
                          still use the sample-name regex.
+  -c, --coverage <T,N>   Coverage floors in x for tumors and normals, e.g.
+                         -c 40,10. Default: {COVERAGE_WARN[['T']]},{COVERAGE_WARN[['N']]}
+                         Samples of unknown class get the higher of the two.
   -h, --help             Show this message and exit.
 
 Writes into <OutDir>:
@@ -95,7 +99,7 @@ if (any(args %in% c("-h", "--help"))) {
     quit(save = "no", status = 0)
 }
 
-flags <- c("--background", "--out", "--project", "--pairing")
+flags <- c("--background", "--out", "--project", "--pairing", "-c", "--coverage")
 flagValues <- map_chr(flags, \(f) getOpt(f, NA_character_))
 consumed <- c(flags, flagValues[!is.na(flagValues)])
 positional <- args[!args %in% consumed]
@@ -106,6 +110,7 @@ No Map directory given.
 
   Usage: Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>]
                                   [--project <Name>] [--pairing <File>]
+                                  [--coverage <T,N>]
 
   <MapDir> is the Map stage output to assess.
   Run with --help for the full description and the list of outputs.
@@ -122,6 +127,20 @@ backgroundDir <- getOpt("--background", defaultBackground)
 outDir <- getOpt("--out", "triage")
 projectName <- getOpt("--project", path_file(path_real(path(mapDir, ".."))))
 pairingFile <- getOpt("--pairing", NA_character_)
+
+## Coverage floors override. Replaces the defaults from qcLib.R before any
+## sample is scored. Unknown class keeps the rule from qcLib.R: it takes the
+## stricter (higher) of the two floors.
+coverageOpt <- getOpt("--coverage", getOpt("-c", NA_character_))
+if (!is.na(coverageOpt)) {
+    coverageVals <- coverageOpt |> str_split_1(",") |> str_trim() |> as.numeric() |> suppressWarnings()
+    if (length(coverageVals) != 2 || any(is.na(coverageVals)) || any(coverageVals < 0)) {
+        stop(glue("Bad --coverage value: {coverageOpt}\n",
+                  "  Expected two non-negative numbers T,N, e.g. -c 40,10"),
+             call. = FALSE)
+    }
+    COVERAGE_WARN <- c(N = coverageVals[2], T = coverageVals[1], UNK = max(coverageVals))
+}
 dir_create(outDir)
 
 metricsDir <- path(mapDir, "out", "metrics")
