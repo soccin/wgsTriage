@@ -41,7 +41,7 @@ run from any working directory.
 Assess a project:
 
 ```
-Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>] [--pairing <File>]
+Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>] [--pairing <File>] [--coverage <T,N>]
 ```
 
 Rebuild the background. This is done regularly, whenever new projects have
@@ -90,8 +90,9 @@ A sample tripping three or more warnings at once is failed even when no single
 threshold fires, because these metrics are not independent and move together
 under genuine degradation.
 
-Coverage floors are 30x for normals and 80x for tumors. A sample whose class
-cannot be read from its name is held to the tumor floor. Falling below the
+Coverage floors are 30x for normals and 80x for tumors by default; set them
+with `-c|--coverage T,N`, e.g. `-c 40,10`. A sample whose class cannot be
+read from its name is held to the higher of the two floors. Falling below the
 floor raises a warning, which counts toward the three above; coverage alone
 never fails a sample.
 
