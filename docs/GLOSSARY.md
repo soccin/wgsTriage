@@ -14,10 +14,10 @@ The report sent to the data provider. Sections in the order they appear.
 | Section | Contents | Membership |
 |---|---|---|
 | Banner and counts | Cohort verdict and six headline counts. | Always. |
-| Notes | Incomplete cohort, reduced check set. | Cohort is incomplete, or a check's entire source is absent. |
+| Notes | Incomplete cohort, reduced check set, manifest samples not in this run, samples not in the manifest. | Cohort is incomplete, or a check's entire source is absent. The two manifest notes only with `--manifest`, when a listed sample has no metrics in this run or a sample in the run is not listed. |
 | `Cohort` | One row per sample: name, class, verdict, one cell per applied check, coverage. Each cell shows the measured value; the reference median for the column, and the coverage floors, sit in the column header. Ordered failures, incomplete, warnings, passes. | Every sample submitted. |
 | `Coverage losses` | One row per sample, in `Cohort` order: name, class, the seven Picard exclusion percentages shown (adapter, MAPQ, duplicate, base quality, overlap, capped, total), coverage, raw coverage. Overlap, total and coverage carry their status color; the rest are not gated. | Every sample submitted. |
-| `Tumor / normal pairs` | Patient, tumor, normal, both insert sizes, ratio, verdict, reason. | All inferred pairs. States when none could be inferred. |
+| `Tumor / normal pairs` | Patient, tumor, normal, both insert sizes, ratio, verdict, reason. Under the normal's name, `normalChoice` when there was a choice or the normal is not in this run. Then unpaired samples, and normals not used. | All pairs formed, section 5. States when none could be formed. Normals not used appear only with `--manifest`. |
 | `Per-sample detail for the data provider` | One card per sample: the checks it failed, each value against the reference median, and the effect on downstream analysis. | Verdict `FAIL`. |
 | `Thresholds applied` | Each check with its plain-language description, fail and warn values, reference median, and the number of background samples behind that median. | The checks evaluated for this cohort. |
 | `Where each number comes from` | Report label, internal name, source tool and file, source field(s), transform. Generated from the checks applied plus `PROVENANCE` in `R/qcLib.R`. | The checks evaluated, plus `rawCoverage`, the five ungated coverage losses, `insertSizeAverage`, `insertRatio`, `sampleType` and `patient`. |
@@ -40,15 +40,16 @@ The same evaluation as section 1, as text.
 | Section | Contents | Membership |
 |---|---|---|
 | Header | Project, samples checked of samples submitted, date. | Always. |
-| `RESULT` | The cohort verdict, and pairs unusable of pairs found. | Always. |
+| `RESULT` | The cohort verdict, pairs unusable of pairs found, and pairs not assessed. | Always. Pairs not assessed only when a pair is `INCOMPLETE`. |
 | Incomplete-cohort warning | Count of samples with incomplete metrics. | Samples checked is below samples submitted. |
 | Reduced-check-set note | Which checks were not evaluated. | A check's entire source is absent for the cohort. |
+| Manifest notes | Manifest samples not in this Map run; samples in the run not in the manifest. Names wrapped. | `--manifest` given and such samples exist. |
 | `FAILED SAMPLES` | Sample, class, split-read rate with fold, read used, coverage, count of thresholds failed. Ordered by chimera rate, highest first. | Verdict `FAIL`. |
 | `BELOW COVERAGE FLOOR` | Sample, class, coverage, the floor it fell below. Ordered by coverage, lowest first. | `lowCoverage` is `TRUE`, whatever the verdict. |
 | `SAMPLES NEEDING REVIEW` | Sample, class, `verdictReason`. | Verdict `WARN`. |
 | `SAMPLES NOT FULLY ASSESSED` | Sample, class, `verdictReason`. | Verdict `INCOMPLETE`. |
 | `PASSED SAMPLES` | Names, wrapped, and the coverage range across them. | Verdict `PASS`. |
-| `PAIR CHECKS` | Patient, `pairVerdict`, `pairReason`; then unpaired samples; then the insert size divergence block. | All inferred pairs, failures first. The divergence block lists pairs with `insertRatio` above 1.5. |
+| `PAIR CHECKS` | Patient, `pairVerdict`, `pairReason`; then unpaired samples; then normals not used; then the insert size divergence block. | All pairs formed, failures first. Normals not used appear only with `--manifest`. The divergence block lists pairs with `insertRatio` above 1.5. |
 | Footer | Number of samples behind the reference ranges, or a statement that no background was loaded. | Always. |
 
 The tumor is named alongside the patient where one patient contributes more
@@ -82,8 +83,8 @@ not be read appears with empty values rather than being omitted.
 |---|---|
 | `project` | The `--project` argument, or the directory containing `<MapDir>`. |
 | `sample` | File basename with the `.asm.txt` / `.wgs.txt` extension and any `.smap`, `.md` or `.recal` suffix removed. |
-| `sampleType` | Sample class: `N`, `T`, or `UNK` (unknown). From the sample-name regex by default; overridden by `--pairing` when the sample is listed as `NORMAL_ID` or `TUMOR_ID`. |
-| `patient` | Pairing key. By default the sample name with its trailing class token removed (`APTL_MDA012_N02` and `APTL_MDA012_T01` both reduce to `APTL_MDA012`). With `--pairing`, listed normals keep their own ID and listed tumors inherit the `NORMAL_ID` they are paired with. |
+| `sampleType` | Sample class: `N`, `T`, or `UNK` (unknown). From the sample-name regex by default; overridden by `--pairing` when the sample is listed as `NORMAL_ID` or `TUMOR_ID`, or by `--manifest` when the sample is listed (`status` 1 is `T`, 0 is `N`). |
+| `patient` | Pairing key. By default the sample name with its trailing class token removed (`APTL_MDA012_N02` and `APTL_MDA012_T01` both reduce to `APTL_MDA012`). With `--pairing`, listed normals keep their own ID and listed tumors inherit the `NORMAL_ID` they are paired with. With `--manifest`, the manifest's `patient` column for listed samples. |
 
 ### Verdict
 
@@ -171,28 +172,51 @@ reference. Both metrics above are `high`.
 
 ## 5. `wgsTriage_pairs.tsv`
 
-One row per tumor/normal pair, matched on `patient` between a sample classified
-`T` and one classified `N`. A patient with several tumors contributes several
-rows. Samples classified `UNK` form no pair.
+One row per tumor/normal pair. Samples classified `UNK` form no pair.
+
+Without a manifest, pairs are matched on `patient` between a sample classified
+`T` and one classified `N`, in every combination. A patient with several tumors
+contributes several rows, and a patient with two normals gives each tumor two
+rows.
+
+With `--manifest`, each tumor in the run is paired with exactly one normal of
+its patient, and one normal may serve several tumors. The normal is chosen once
+per patient, so all of a patient's tumors share it. Candidates are the
+patient's normals in the run plus any the manifest lists that are not in it,
+ranked by:
+
+1. sample verdict: `PASS`, `WARN`, `INCOMPLETE`, then a normal not in this Map
+   run, then `FAIL`;
+2. `meanCoverage`, highest first;
+3. row order in the manifest.
+
+A normal not in the run ranks above a `FAIL` because it has not been checked,
+whereas a `FAIL` has been checked and is unusable. A tumor not in the run forms
+no pair. The rule is `selectNormals()` in `R/qcLib.R`.
 
 | Column | Definition |
 |---|---|
-| `patient` | The patient stem the two samples were matched on. |
+| `patient` | The patient key the two samples were matched on: the patient stem, the `--pairing` `NORMAL_ID`, or the manifest `patient`. |
 | `sampleTumor` | Name of the tumor sample. |
 | `sampleNormal` | Name of the normal sample. |
 | `sampleTypeTumor` | Class of the tumor sample. `T` by construction. |
-| `sampleTypeNormal` | Class of the normal sample. `N` by construction. |
+| `sampleTypeNormal` | Class of the normal sample. `N` by construction, including a normal not in this Map run. |
 | `insertSizeAverageTumor` | The tumor's `insertSizeAverage`. |
-| `insertSizeAverageNormal` | The normal's `insertSizeAverage`. |
+| `insertSizeAverageNormal` | The normal's `insertSizeAverage`. Empty when the normal is not in this Map run. |
 | `insertRatio` | Larger of the two insert size averages divided by the smaller. Always at least 1. |
 | `insertStatus` | `FAIL` when `insertRatio` exceeds `INSERT_RATIO_FAIL`, 1.5. `MISSING` when either insert size is absent. Otherwise `PASS`. |
 | `verdictTumor` | The tumor sample's `verdict`, unchanged. |
-| `verdictNormal` | The normal sample's `verdict`, unchanged. |
-| `pairVerdict` | `FAIL` when either sample failed or `insertStatus` is `FAIL`. `INCOMPLETE` when either sample is `INCOMPLETE`. Otherwise `PASS`. |
-| `pairReason` | The condition that produced `pairVerdict`. Empty when the pair passes. |
+| `verdictNormal` | The normal sample's `verdict`, unchanged. Empty when the normal is not in this Map run. |
+| `pairVerdict` | `FAIL` when either sample failed or `insertStatus` is `FAIL`. `INCOMPLETE` when the normal is not in this Map run, or either sample is `INCOMPLETE`. Otherwise `PASS`. |
+| `pairReason` | The condition that produced `pairVerdict`: a failed sample, insert divergence, or `normal not in this Map run`. Empty when the pair passes. |
+| `normalChoice` | With `--manifest`, why this normal was used. `only normal` when the patient has one; `best of k by verdict`, `by coverage` or `by manifest order`, naming the criterion that ranked it above the next normal, where k counts the patient's normals in the run and in the manifest; `not in this Map run` when the chosen normal has no metrics here. Empty without a manifest. |
 
-A sample-level failure takes precedence in `pairReason` over insert divergence.
-Both reports list divergent pairs in a separate block.
+A sample-level failure takes precedence in `pairReason` over insert divergence,
+and both take precedence over a normal not in the run. Both reports list
+divergent pairs in a separate block.
+
+A normal not chosen for its patient is listed in both reports as a normal not
+used, separately from unpaired samples: its patient has a pair.
 
 ---
 

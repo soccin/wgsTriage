@@ -30,6 +30,7 @@ TODO_260721.md              outstanding work, kept at the root to stay visible
 tests/testThresholds.R      smoke test over synthetic fixtures
 tests/testGlossary.R        fails when an output column is undocumented
 tests/testBackgroundSelfExclude.R  background importer skips its own fixtures
+tests/testManifest.R        --manifest class override and normal selection
 ```
 
 ## Usage
@@ -41,8 +42,25 @@ run from any working directory.
 Assess a project:
 
 ```
-Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>] [--pairing <File>] [--coverage <T,N>]
+Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>] [--project <Name>]
+                        [--pairing <File> | --manifest <File>] [--coverage <T,N>]
 ```
+
+Tumor/normal class and pairs come from the sample names by default, which
+works only for names ending in an `N` / `T` token. Two files override that,
+and only one can be given:
+
+- `--pairing <File>`: a TSV with `NORMAL_ID` and `TUMOR_ID`, one row per pair.
+- `-m|--manifest <File>`: a CSV with `sample`, `patient` and `status`, status
+  1 for tumor and 0 for normal; other columns are ignored. Each tumor is
+  paired with one normal of its patient, and a normal can serve several
+  tumors. Where a patient has several normals, the one with the best verdict,
+  then the highest usable coverage, then the first listed, is used for all of
+  that patient's tumors. A normal listed in the manifest but not in this Map
+  run can still be chosen, ahead only of a `FAIL` normal; its pairs are
+  reported `INCOMPLETE`.
+
+Samples not listed in either file keep their name-based class.
 
 Rebuild the background. This is done regularly, whenever new projects have
 been mapped; see `docs/BACKGROUND.md` section 8 for the checks and the build

@@ -127,8 +127,8 @@ PROVENANCE <- tribble(
     "pctExcCapped",       "Capped loss",         "Picard CollectWgsMetrics",              "<sample>.wgs.txt",              "PCT_EXC_CAPPED",                                   "x 100",                                                   FALSE,
     "insertSizeAverage",  "Insert T / Insert N", "samtools stats, via multiqc",           "multiqc_samtools_stats.txt",    "insert_size_average",                              "none",                                                    FALSE,
     "insertRatio",        "Ratio",               "computed by wgsTriage",                 NA,                              "insertSizeAverage, tumor and normal of one patient", "larger / smaller",                                       TRUE,
-    "sampleType",         "T/N",                 "computed by wgsTriage",                 NA,                              "sample name",                                      "regex on the trailing N / T token, else UNK",              TRUE,
-    "patient",            "Patient",             "computed by wgsTriage",                 NA,                              "sample name",                                      "sample name with the trailing N / T token removed",        TRUE)
+    "sampleType",         "T/N",                 "computed by wgsTriage",                 NA,                              "sample name, or --manifest / --pairing file",      "manifest status (1 T, 0 N) or pairing column if listed; else regex on the trailing N / T token, else UNK", TRUE,
+    "patient",            "Patient",             "computed by wgsTriage",                 NA,                              "sample name, or --manifest / --pairing file",      "manifest patient or pairing NORMAL_ID if listed; else sample name with the trailing N / T token removed", TRUE)
 
 ##
 ## Picard metrics files carry '#' comment headers, then a '## METRICS CLASS'
@@ -192,6 +192,7 @@ patientStem <- function(sample) {
 ## and supplies the patient key used to form pairs: each normal keeps its own
 ## ID as patient, and each tumor inherits the NORMAL_ID it is paired with.
 ## Samples absent from the file keep classifySampleType() / patientStem().
+## Mutually exclusive with the manifest below; bin/wgsTriage.R refuses both.
 ##
 readPairingFile <- function(path) {
     if (!file_exists(path)) {
@@ -245,6 +246,140 @@ applyPairing <- function(dat, pairing) {
         mutate(sampleType = coalesce(sampleTypePair, sampleType),
                patient    = coalesce(patientPair, patient)) |>
         select(-sampleTypePair, -patientPair)
+}
+
+##
+## Optional sample manifest. A CSV with one row per sample and at least the
+## columns sample, patient and status, where status 1 is a tumor and 0 a normal.
+## Other columns, such as sarek_patient, are ignored. When present it sets
+## tumor/normal class and the patient key for every listed sample, and pairs are
+## chosen by selectNormals() instead of formed from every tumor x normal
+## combination. Samples absent from the file keep classifySampleType() /
+## patientStem().
+##
+## Row order is kept as manifestOrder: it is the last tie-breaker when a patient
+## has several normals of equal quality.
+##
+readManifestFile <- function(path) {
+    if (!file_exists(path)) {
+        stop(glue("Manifest file not found: {path}"), call. = FALSE)
+    }
+    manifest <- read_csv(path, col_types = cols(.default = col_character()),
+                         show_col_types = FALSE, progress = FALSE)
+    required <- c("sample", "patient", "status")
+    missing <- setdiff(required, names(manifest))
+    if (length(missing) > 0) {
+        stop(glue("Manifest file {path} is missing required column(s): {str_c(missing, collapse = ', ')}. ",
+                  "Expected a CSV with sample, patient and status columns."),
+             call. = FALSE)
+    }
+    ## A row with all three fields empty is a spreadsheet artifact, not an entry.
+    manifest <- manifest |>
+        transmute(sample  = str_trim(sample),
+                  patient = str_trim(patient),
+                  status  = str_trim(status)) |>
+        filter(!if_all(c(sample, patient, status), \(x) is.na(x) | x == "")) |>
+        mutate(manifestOrder = row_number())
+    if (nrow(manifest) == 0) {
+        stop(glue("Manifest file {path} has no sample rows."), call. = FALSE)
+    }
+    blank <- manifest |> filter(is.na(sample) | sample == "" | is.na(patient) | patient == "")
+    if (nrow(blank) > 0) {
+        stop(glue("Manifest file {path} has {nrow(blank)} row(s) with no sample or no patient."),
+             call. = FALSE)
+    }
+    badStatus <- manifest |> filter(is.na(status) | !status %in% c("0", "1"))
+    if (nrow(badStatus) > 0) {
+        stop(glue("Manifest file {path} has a status other than 1 (tumor) or 0 (normal) for: ",
+                  "{str_c(badStatus$sample, collapse = ', ')}."),
+             call. = FALSE)
+    }
+    dupes <- manifest |> count(sample, name = "n") |> filter(n > 1)
+    if (nrow(dupes) > 0) {
+        stop(glue("Manifest file {path} lists sample(s) more than once: ",
+                  "{str_c(dupes$sample, collapse = ', ')}."),
+             call. = FALSE)
+    }
+    manifest |>
+        mutate(sampleType = if_else(status == "1", "T", "N")) |>
+        select(sample, patient, sampleType, manifestOrder)
+}
+
+## Overlay manifest class and patient onto a per-sample table that already
+## carries name-based sampleType and patient. Listed samples win; others stay.
+applyManifest <- function(dat, manifest) {
+    override <- manifest |>
+        select(sample, sampleTypeManifest = sampleType, patientManifest = patient)
+
+    dat |>
+        left_join(override, by = "sample") |>
+        mutate(sampleType = coalesce(sampleTypeManifest, sampleType),
+               patient    = coalesce(patientManifest, patient)) |>
+        select(-sampleTypeManifest, -patientManifest)
+}
+
+##
+## Tumor/normal pairs from the patient key alone: every tumor with every normal
+## of the same patient. Used without a manifest. Under --pairing each tumor
+## carries its normal's ID as patient, so this yields exactly the listed pairs;
+## under name-based inference a patient with two normals gives each tumor two
+## pairs.
+##
+formPairs <- function(dat) {
+    tumors  <- dat |> filter(sampleType == "T") |> select(patient, sampleTumor = sample)
+    normals <- dat |> filter(sampleType == "N") |> select(patient, sampleNormal = sample)
+    inner_join(tumors, normals, by = "patient", relationship = "many-to-many") |>
+        mutate(normalChoice = NA_character_)
+}
+
+##
+## Tumor/normal pairs under a manifest: each tumor gets exactly one normal, and
+## one normal may serve several tumors. The normal is chosen once per patient,
+## so every tumor of a patient shares it; that is also how Sarek groups samples.
+##
+## Candidates are the patient's normals in this Map run plus any the manifest
+## lists that are not in it. They are ranked by NORMAL_RANK on the sample
+## verdict, then by highest usable coverage, then by manifest order. A normal
+## absent from the run ranks above a FAIL: it has not been checked, whereas a
+## FAIL has been checked and is unusable. Choosing it makes the pair INCOMPLETE
+## rather than FAIL.
+##
+## normalChoice records which criterion decided, so the report can say why one
+## normal was used and another was not.
+##
+## Expects dat to carry verdict and meanCoverage, so it runs after the sample
+## verdicts.
+##
+NORMAL_RANK <- c(PASS = 1, WARN = 2, INCOMPLETE = 3, ABSENT = 4, FAIL = 5)
+
+selectNormals <- function(dat, manifest) {
+    inRun <- dat |>
+        filter(sampleType == "N") |>
+        transmute(patient, sample, meanCoverage,
+                  rankClass = coalesce(verdict, "INCOMPLETE"))
+    absent <- manifest |>
+        filter(sampleType == "N", !sample %in% dat$sample) |>
+        transmute(patient, sample, meanCoverage = NA_real_, rankClass = "ABSENT")
+
+    chosen <- bind_rows(inRun, absent) |>
+        left_join(manifest |> select(sample, manifestOrder), by = "sample") |>
+        mutate(rank = unname(NORMAL_RANK[rankClass])) |>
+        arrange(patient, rank, desc(meanCoverage), manifestOrder, sample) |>
+        mutate(nNormals = n(), .by = patient) |>
+        mutate(normalChoice = case_when(
+                   rankClass[1] == "ABSENT"                     ~ "not in this Map run",
+                   nNormals == 1                                ~ "only normal",
+                   rank[1] != rank[2]                           ~ glue("best of {nNormals} by verdict"),
+                   !identical(meanCoverage[1], meanCoverage[2]) ~ glue("best of {nNormals} by coverage"),
+                   .default = glue("best of {nNormals} by manifest order")),
+               .by = patient) |>
+        slice_head(n = 1, by = patient) |>
+        select(patient, sampleNormal = sample, normalChoice)
+
+    dat |>
+        filter(sampleType == "T") |>
+        select(patient, sampleTumor = sample) |>
+        inner_join(chosen, by = "patient")
 }
 
 ##
@@ -440,17 +575,26 @@ sampleVerdict <- function(thresholdResults) {
 ## unusable together, so these are computed after the sample level verdicts and
 ## reported alongside them rather than folded into them.
 ##
-evaluatePairs <- function(dat, verdicts) {
-    paired <- dat |>
-        select(sample, patient, sampleType, insertSizeAverage) |>
-        left_join(verdicts |> select(sample, verdict), by = "sample") |>
-        filter(sampleType %in% c("N", "T"))
+## pairTable names the pairs, from formPairs() or selectNormals(). Its normal
+## may be absent from this Map run when a manifest names it; that pair has no
+## normal metrics and is INCOMPLETE unless the tumor alone already fails it.
+## Without samtools there is no insert size, so insertStatus is MISSING.
+##
+evaluatePairs <- function(dat, verdicts, pairTable) {
+    sampleInfo <- dat |>
+        select(sample, sampleType, any_of("insertSizeAverage")) |>
+        left_join(verdicts |> select(sample, verdict), by = "sample")
+    if (!"insertSizeAverage" %in% names(sampleInfo)) {
+        sampleInfo <- sampleInfo |> mutate(insertSizeAverage = NA_real_)
+    }
+    infoAs <- function(role) sampleInfo |> rename_with(\(x) str_c(x, role))
 
-    tumors  <- paired |> filter(sampleType == "T")
-    normals <- paired |> filter(sampleType == "N")
-
-    inner_join(tumors, normals, by = "patient", suffix = c("Tumor", "Normal")) |>
+    pairTable |>
+        left_join(infoAs("Tumor"), by = "sampleTumor") |>
+        left_join(infoAs("Normal"), by = "sampleNormal") |>
         mutate(
+            normalInRun = sampleNormal %in% dat$sample,
+            sampleTypeNormal = coalesce(sampleTypeNormal, "N"),
             insertRatio = pmax(insertSizeAverageTumor, insertSizeAverageNormal) /
                           pmin(insertSizeAverageTumor, insertSizeAverageNormal),
             insertStatus = case_when(
@@ -460,6 +604,7 @@ evaluatePairs <- function(dat, verdicts) {
             pairVerdict = case_when(
                 verdictTumor == "FAIL" | verdictNormal == "FAIL" ~ "FAIL",
                 insertStatus == "FAIL"                           ~ "FAIL",
+                !normalInRun                                     ~ "INCOMPLETE",
                 verdictTumor == "INCOMPLETE" | verdictNormal == "INCOMPLETE" ~ "INCOMPLETE",
                 .default                                          = "PASS"),
             pairReason = case_when(
@@ -467,6 +612,10 @@ evaluatePairs <- function(dat, verdicts) {
                 verdictNormal == "FAIL"                          ~ "normal failed QC",
                 verdictTumor == "FAIL"                           ~ "tumor failed QC",
                 insertStatus == "FAIL" ~ glue("insert size differs {round(insertRatio, 2)}x"),
-                .default                                         = ""))
+                !normalInRun                                     ~ "normal not in this Map run",
+                .default                                         = "")) |>
+        select(sampleTumor, patient, sampleTypeTumor, insertSizeAverageTumor, verdictTumor,
+               sampleNormal, sampleTypeNormal, insertSizeAverageNormal, verdictNormal,
+               insertRatio, insertStatus, pairVerdict, pairReason, normalChoice)
 }
 

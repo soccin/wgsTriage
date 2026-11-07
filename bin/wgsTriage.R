@@ -53,7 +53,8 @@ pair.
 
 Usage:
   Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>]
-                          [--project <Name>] [--pairing <File>]
+                          [--project <Name>]
+                          [--pairing <File> | --manifest <File>]
                           [--coverage <T,N>]
   Rscript bin/wgsTriage.R --help
 
@@ -76,6 +77,14 @@ Options:
                          name-based tumor/normal class for listed samples and
                          defines which samples form pairs. Unlisted samples
                          still use the sample-name regex.
+  -m, --manifest <File>  CSV with sample, patient and status columns, status
+                         1 for tumor and 0 for normal; other columns are
+                         ignored. Sets class and patient for listed samples.
+                         Each tumor is paired with one normal of its patient:
+                         the best verdict, then the highest usable coverage,
+                         then the first listed. A normal can serve several
+                         tumors. Unlisted samples still use the sample-name
+                         regex. Cannot be combined with --pairing.
   -c, --coverage <T,N>   Coverage floors in x for tumors and normals, e.g.
                          -c 40,10. Default: {COVERAGE_WARN[['T']]},{COVERAGE_WARN[['N']]}
                          Samples of unknown class get the higher of the two.
@@ -99,7 +108,7 @@ if (any(args %in% c("-h", "--help"))) {
     quit(save = "no", status = 0)
 }
 
-flags <- c("--background", "--out", "--project", "--pairing", "-c", "--coverage")
+flags <- c("--background", "--out", "--project", "--pairing", "-m", "--manifest", "-c", "--coverage")
 flagValues <- map_chr(flags, \(f) getOpt(f, NA_character_))
 consumed <- c(flags, flagValues[!is.na(flagValues)])
 positional <- args[!args %in% consumed]
@@ -109,7 +118,8 @@ if (length(positional) == 0) {
 No Map directory given.
 
   Usage: Rscript bin/wgsTriage.R <MapDir> [--background <BgDir>] [--out <OutDir>]
-                                  [--project <Name>] [--pairing <File>]
+                                  [--project <Name>]
+                                  [--pairing <File> | --manifest <File>]
                                   [--coverage <T,N>]
 
   <MapDir> is the Map stage output to assess.
@@ -127,6 +137,15 @@ backgroundDir <- getOpt("--background", defaultBackground)
 outDir <- getOpt("--out", "triage")
 projectName <- getOpt("--project", path_file(path_real(path(mapDir, ".."))))
 pairingFile <- getOpt("--pairing", NA_character_)
+manifestFile <- getOpt("--manifest", getOpt("-m", NA_character_))
+
+## Both define class and pairs, by different rules. Accepting both would mean
+## choosing which one wins without saying so.
+if (!is.na(pairingFile) && !is.na(manifestFile)) {
+    stop(glue("--pairing and --manifest cannot be used together.\n",
+              "  Both set tumor/normal class and pairs; give one."),
+         call. = FALSE)
+}
 
 ## Coverage floors override. Replaces the defaults from qcLib.R before any
 ## sample is scored. Unknown class keeps the rule from qcLib.R: it takes the
@@ -182,6 +201,27 @@ dat <- tibble(sample = expectedSamples) |>
 ##
 havePairing <- !is.na(pairingFile)
 if (havePairing) dat <- applyPairing(dat, readPairingFile(pairingFile))
+
+##
+## Optional manifest, the same overlay by a different file. A manifest normally
+## describes the whole project while a Map run may hold only part of it, so
+## samples on one side and not the other are reported, not treated as errors.
+## No overlap at all means the wrong file.
+##
+haveManifest <- !is.na(manifestFile)
+manifestAbsent <- character()
+notInManifest <- character()
+if (haveManifest) {
+    manifest <- readManifestFile(manifestFile)
+    if (!any(manifest$sample %in% dat$sample)) {
+        stop(glue("No sample in manifest {manifestFile} matches a sample in {metricsDir}.\n",
+                  "  Check that the manifest belongs to this Map run."),
+             call. = FALSE)
+    }
+    dat <- applyManifest(dat, manifest)
+    manifestAbsent <- manifest |> filter(!sample %in% dat$sample) |> pull(sample)
+    notInManifest <- dat |> filter(!sample %in% manifest$sample) |> pull(sample)
+}
 
 if (haveSamtools) dat <- dat |> left_join(samtools, by = "sample")
 
@@ -287,31 +327,25 @@ dat <- dat |>
            suppFold = if (haveSamtools) map2_dbl("supplementaryRate", supplementaryRate, foldOf) else NA_real_)
 
 ##
-## Pair level checks.
+## Pair level checks. Without a manifest every tumor is paired with every normal
+## of its patient. With one, each tumor is paired with the single best normal of
+## its patient; see selectNormals() in R/qcLib.R. The normal choice uses sample
+## verdicts and coverage, which is why pairing comes after both.
 ##
-pairs <- if (haveSamtools) {
-    evaluatePairs(dat, verdicts)
-} else {
-    dat |>
-        select(sample, patient, sampleType) |>
-        left_join(verdicts |> select(sample, verdict), by = "sample") |>
-        filter(sampleType %in% c("N", "T")) |>
-        (\(p) inner_join(filter(p, sampleType == "T"), filter(p, sampleType == "N"),
-                         by = "patient", suffix = c("Tumor", "Normal")))() |>
-        mutate(insertSizeAverageTumor = NA_real_, insertSizeAverageNormal = NA_real_,
-               insertRatio = NA_real_, insertStatus = "MISSING",
-               pairVerdict = case_when(
-                   verdictTumor == "FAIL" | verdictNormal == "FAIL" ~ "FAIL",
-                   .default = "PASS"),
-               pairReason = case_when(
-                   verdictTumor == "FAIL" & verdictNormal == "FAIL" ~ "both samples failed QC",
-                   verdictNormal == "FAIL" ~ "normal failed QC",
-                   verdictTumor == "FAIL" ~ "tumor failed QC",
-                   .default = ""))
-}
+pairTable <- if (haveManifest) selectNormals(dat, manifest) else formPairs(dat)
+pairs <- evaluatePairs(dat, verdicts, pairTable)
+
+pairedSamples <- c(pairs$sampleTumor, pairs$sampleNormal)
+
+## A normal that lost to a better normal of the same patient is not unpaired:
+## its patient has a pair. It is listed separately so it is not read as a
+## sample with no partner.
+unusedNormals <- dat |>
+    filter(sampleType == "N", !sample %in% pairedSamples, patient %in% pairs$patient) |>
+    pull(sample)
 
 unpaired <- dat |>
-    filter(!patient %in% pairs$patient) |>
+    filter(!sample %in% pairedSamples, !sample %in% unusedNormals) |>
     pull(sample)
 
 ##
@@ -330,6 +364,7 @@ passSamples <- dat |> filter(verdict == "PASS") |> arrange(sample)
 incompleteSamples <- dat |> filter(verdict == "INCOMPLETE") |> arrange(sample)
 
 nPairFail <- sum(pairs$pairVerdict == "FAIL")
+nPairIncomplete <- sum(pairs$pairVerdict == "INCOMPLETE")
 nPairs <- nrow(pairs)
 
 overallVerdict <- case_when(
@@ -370,6 +405,14 @@ L <- character()
 add <- function(...) L <<- c(L, glue(..., .envir = parent.frame()))
 addRaw <- function(x) L <<- c(L, x)
 
+## A list of sample names, comma-separated and wrapped to the report width.
+addNames <- function(x) {
+    str_c(x, collapse = ", ") |>
+        str_wrap(width = w - 4) |>
+        str_split_1("\n") |>
+        walk(\(line) addRaw(str_c("  ", line)))
+}
+
 addRaw(rule)
 addRaw("  BAM WGS-TRIAGE QC")
 add("  Project {projectName}  |  {nChecked} of {nExpected} samples checked  |  {Sys.Date()}")
@@ -384,6 +427,7 @@ verdictLine <- switch(overallVerdict,
 addRaw(verdictLine)
 
 if (nPairs > 0) add("           {nPairFail} of {nPairs} tumor/normal pairs unusable.")
+if (nPairIncomplete > 0) add("           {nPairIncomplete} of {nPairs} pairs could not be assessed.")
 addRaw("")
 
 if (nExpected != nChecked) {
@@ -399,6 +443,19 @@ if (nrow(droppedThresholds) > 0) {
         addRaw("  Without samtools metrics there is no independent confirmation of the")
         addRaw("  Picard result. Verdicts rest on a single tool.")
     }
+    addRaw("")
+}
+
+if (length(manifestAbsent) > 0) {
+    add("  NOTE: {length(manifestAbsent)} manifest sample(s) are not in this Map run and were not assessed:")
+    addNames(manifestAbsent)
+    addRaw("")
+}
+
+if (length(notInManifest) > 0) {
+    add("  NOTE: {length(notInManifest)} sample(s) are not in the manifest; class and patient come")
+    addRaw("  from the sample name:")
+    addNames(notInManifest)
     addRaw("")
 }
 
@@ -476,10 +533,7 @@ if (nPass > 0) {
     addRaw(thin)
     addRaw("  PASSED SAMPLES")
     addRaw(thin)
-    str_c(passSamples$sample, collapse = ", ") |>
-        str_wrap(width = w - 4) |>
-        str_split_1("\n") |>
-        walk(\(x) addRaw(str_c("  ", x)))
+    addNames(passSamples$sample)
     covRange <- passSamples |> filter(!is.na(meanCoverage)) |> pull(meanCoverage)
     if (length(covRange) > 0) {
         add("  All within normal ranges ({sprintf('%.0f', min(covRange))}-{sprintf('%.0f', max(covRange))}x usable coverage).")
@@ -499,12 +553,19 @@ if (nPairs > 0) {
         mutate(label = if_else(nForPatient > 1,
                                str_c(patient, " [", sampleTumor, "]"), patient)) |>
         arrange(pairVerdict != "FAIL", patient) |>
-        mutate(line = sprintf("  %-34s %-6s %s", str_trunc(label, 34),
-                              pairVerdict, str_trunc(pairReason, 31))) |>
+        mutate(line = sprintf("  %-34s %-10s %s", str_trunc(label, 34),
+                              pairVerdict, str_trunc(pairReason, 27))) |>
         pull(line) |>
         walk(addRaw)
     if (length(unpaired) > 0) {
-        add("  Unpaired samples: {str_c(unpaired, collapse = ', ')}")
+        addRaw("")
+        add("  Unpaired samples ({length(unpaired)}):")
+        addNames(unpaired)
+    }
+    if (length(unusedNormals) > 0) {
+        addRaw("")
+        add("  Normals not used, another normal of the same patient was chosen ({length(unusedNormals)}):")
+        addNames(unusedNormals)
     }
 
     ## Insert divergence is reported separately because a sample-level failure
@@ -710,14 +771,18 @@ lossColgroup <- str_c(
     '<col class="c-sample"><col class="c-tn">',
     str_c(rep('<col>', nrow(lossColumns) + 2L), collapse = ""))
 
+## Why this normal, shown under its name. Only where there was a choice or the
+## normal is missing; "only normal" on every row would say nothing.
 pairRows <- if (nPairs > 0) {
     pairs |>
         arrange(pairVerdict != "FAIL", patient) |>
         mutate(row = pmap_chr(list(patient, sampleTumor, sampleNormal, insertSizeAverageTumor,
-                                   insertSizeAverageNormal, insertRatio, pairVerdict, pairReason),
-            \(p, st, sn, it, inn, ir, v, why) {
+                                   insertSizeAverageNormal, insertRatio, pairVerdict, pairReason,
+                                   normalChoice),
+            \(p, st, sn, it, inn, ir, v, why, ch) {
+                chTxt <- if (is.na(ch) || ch == "only normal") "" else glue('<span class="r">{esc(ch)}</span>')
                 glue('<tr><td class="name" data-label="Patient">{esc(p)}</td>',
-                     '<td data-label="Tumor">{esc(st)}</td><td data-label="Normal">{esc(sn)}</td>',
+                     '<td data-label="Tumor">{esc(st)}</td><td data-label="Normal">{esc(sn)}{chTxt}</td>',
                      '<td data-label="Insert T">{if (is.na(it)) "n/a" else sprintf("%.0f", it)}</td>',
                      '<td data-label="Insert N">{if (is.na(inn)) "n/a" else sprintf("%.0f", inn)}</td>',
                      '<td data-label="Ratio">{if (is.na(ir)) "n/a" else sprintf("%.2fx", ir)}</td>',
@@ -729,6 +794,41 @@ pairRows <- if (nPairs > 0) {
 } else {
     '<tr><td colspan="8" data-label="Pairs">No tumor/normal pairs could be formed.</td></tr>'
 }
+
+pairingSource <- if (haveManifest) {
+    "Class and patient come from the --manifest file. Each tumor is paired with one normal
+of its patient: where a patient has several, the one with the best verdict, then the
+highest usable coverage, then the first listed, is used for all of that patient's tumors.
+A tumor whose chosen normal is not in this Map run is still paired with it, and the pair
+is INCOMPLETE."
+} else if (havePairing) {
+    "Pairing comes from the --pairing file, which also sets tumor/normal class for listed samples."
+} else {
+    "Pairing is inferred from sample names."
+}
+
+namesNote <- function(lead, x) {
+    if (length(x) == 0) return("")
+    glue('<p class="meta">{lead} ({length(x)}): <code>{esc(str_c(x, collapse = ", "))}</code></p>')
+}
+
+pairListNotes <- str_c(
+    namesNote("Unpaired samples", unpaired),
+    namesNote("Normals not used, another normal of the same patient was chosen", unusedNormals),
+    sep = "\n")
+
+manifestNotes <- str_c(
+    if (length(manifestAbsent) > 0) {
+        glue('<div class="note"><b>Manifest samples not in this run.</b> {length(manifestAbsent)} sample(s) ',
+             'listed in the manifest have no metrics in this Map directory and were not assessed: ',
+             '<code>{esc(str_c(manifestAbsent, collapse = ", "))}</code>.</div>')
+    } else "",
+    if (length(notInManifest) > 0) {
+        glue('<div class="note"><b>Samples not in the manifest.</b> {length(notInManifest)} sample(s) ',
+             'are not listed in the manifest, so their class and patient come from the sample name: ',
+             '<code>{esc(str_c(notInManifest, collapse = ", "))}</code>.</div>')
+    } else "",
+    sep = "\n")
 
 ##
 ## Per-failure cards, in plain language, for the sequencing core.
@@ -1043,6 +1143,7 @@ html <- glue('<!doctype html>
 
 {if (nExpected != nChecked) glue(\'<div class="note"><b>Cohort is incomplete.</b> {nExpected - nChecked} sample(s) are missing metrics and were not fully assessed.</div>\') else ""}
 {if (nrow(droppedThresholds) > 0) glue(\'<div class="note"><b>Reduced check set.</b> {nrow(droppedThresholds)} filter threshold(s) were not evaluated because this cohort carries no data for them: <code>{str_c(droppedThresholds$metric, collapse = ", ")}</code>.{if ("samtools" %in% droppedSources) " Without samtools metrics there is no independent confirmation of the Picard result, so every verdict below rests on a single tool." else ""}</div>\') else ""}
+{manifestNotes}
 
 <h2>Cohort</h2>
 <p class="meta">Worst first. Each cell shows the measured value; the clean-sample reference for each column is in its header.</p>
@@ -1068,7 +1169,7 @@ before any exclusion.</p>
 </table>
 
 <h2>Tumor / normal pairs</h2>
-<p class="meta">{if (havePairing) "Pairing comes from the --pairing file, which also sets tumor/normal class for listed samples." else "Pairing is inferred from sample names."} Two samples can each pass on their
+<p class="meta">{pairingSource} Two samples can each pass on their
 own and still be unusable together: Facets needs comparable insert size distributions,
 and unlike the SV caller it fails silently rather than crashing.</p>
 <table>
@@ -1078,6 +1179,7 @@ and unlike the SV caller it fails silently rather than crashing.</p>
 {pairRows}
 </tbody>
 </table>
+{pairListNotes}
 
 <h2>Per-sample detail for the data provider</h2>
 {failureCards}
