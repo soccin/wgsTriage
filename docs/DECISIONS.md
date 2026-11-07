@@ -114,6 +114,31 @@ with `NORMAL_ID` and `TUMOR_ID` columns that overrides name-based class for
 listed samples and defines which samples form pairs. Unlisted samples still use
 the regex.
 
+### A manifest pairs each tumor with one normal, chosen on QC
+
+Added 2026-11-06 for Proj_18079_K, whose names (`_n1`, `_t1a`, `CL_..._P12`)
+the regex reads as `UNK` throughout. `-m|--manifest` takes the project's sample
+manifest (`sample,patient,status`) instead of a hand-written pair list.
+
+Matching on patient alone forms every tumor x normal combination, so a patient
+with two normals and two tumors gives four pairs. Under a manifest each tumor
+gets one normal instead. The normal is chosen once per patient, not per tumor:
+all of a patient's tumors share it, which matches how Sarek groups samples by
+patient. Choosing per tumor, for example by closest insert size, would give a
+patient's tumors different normals, which Sarek cannot run without a separate
+patient ID per tumor.
+
+The ranking is sample verdict, then usable coverage, then manifest order. A
+normal named in the manifest but not in this Map run ranks above a `FAIL`
+normal: it is unchecked, not known to be bad. Its pair is reported
+`INCOMPLETE`, and the manifest samples missing from the run are listed in a
+note rather than counted as incomplete samples. A manifest usually describes
+the whole project while a Map run holds part of it; in Proj_18079_K, 18 of
+118 manifest samples are mapped elsewhere.
+
+`--manifest` and `--pairing` cannot be combined. Both set class and pairs, and
+accepting both would mean choosing a winner without saying so.
+
 ### Background keyed on project plus sample
 
 100 sample names occur in more than one project in the archive, usually from
