@@ -129,7 +129,7 @@ alone.
 | `rawCoverage` | **derived**: `MEAN_COVERAGE / (1 - PCT_EXC_TOTAL)`. Depth before any of Picard's exclusions. Report label "Raw coverage". Not gated. |
 | `medianCoverage` | wgs, `MEDIAN_COVERAGE`. Not gated. |
 | `coverageFloor` | The floor for this sample's class: 30x for `N`, 80x for `T`, 80x for `UNK`. |
-| `lowCoverage` | `TRUE` when `meanCoverage` is below `coverageFloor`. |
+| `lowCoverage` | `TRUE` when `meanCoverage`, rounded to one decimal, is below `coverageFloor`. 9.96x counts as 10.0x and passes a 10x floor; 9.94x counts as 9.9x and does not. |
 
 The coverage floor is the eighth check. It is defined in `bin/wgsTriage.R`
 rather than in `THRESHOLDS`, since its value varies by sample class. It warns
