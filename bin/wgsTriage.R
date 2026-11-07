@@ -483,7 +483,7 @@ if (nFail > 0) {
                               pctChimeras,
                               if_else(is.na(chimeraFold), "", sprintf("(%.0fx)", chimeraFold)),
                               if_else(is.na(pctReadUsed), "n/a", sprintf("%.0f%%", pctReadUsed)),
-                              if_else(is.na(meanCoverage), "n/a", sprintf("%.0fx", meanCoverage)),
+                              if_else(is.na(meanCoverage), "n/a", sprintf("%.1fx", meanCoverage)),
                               if_else(lowCoverage, " LOW", ""),
                               nFail)) |>
         pull(line) |>
@@ -497,7 +497,7 @@ if (any(dat$lowCoverage)) {
     addRaw("  BELOW COVERAGE FLOOR")
     addRaw(thin)
     lowCov |>
-        mutate(line = sprintf("  %-21s %-4s %.0fx usable, below the %.0fx floor for %s",
+        mutate(line = sprintf("  %-21s %-4s %.1fx usable, below the %gx floor for %s",
                               str_trunc(sample, 21), sampleType, meanCoverage,
                               coverageFloor, sampleType)) |>
         pull(line) |>
@@ -536,7 +536,7 @@ if (nPass > 0) {
     addNames(passSamples$sample)
     covRange <- passSamples |> filter(!is.na(meanCoverage)) |> pull(meanCoverage)
     if (length(covRange) > 0) {
-        add("  All within normal ranges ({sprintf('%.0f', min(covRange))}-{sprintf('%.0f', max(covRange))}x usable coverage).")
+        add("  All within normal ranges ({sprintf('%.1f', min(covRange))}-{sprintf('%.1f', max(covRange))}x usable coverage).")
     }
     addRaw("")
 }
@@ -669,7 +669,7 @@ worstFirst <- dat |>
 cohortRows <- worstFirst |>
     mutate(row = pmap_chr(list(sample, sampleType, verdict, meanCoverage, lowCoverage),
         \(s, t, v, cov, low) {
-            covTxt <- if (is.na(cov)) "n/a" else sprintf("%.0fx", cov)
+            covTxt <- if (is.na(cov)) "n/a" else sprintf("%.1fx", cov)
             glue('<tr><td class="name" data-label="Sample">{esc(s)}</td>',
                  '<td data-label="T/N">{t}</td>',
                  '<td class="{statusClass(v)} verdict" data-label="Verdict">{v}</td>{metricCells(s)}',
@@ -745,8 +745,8 @@ lossCells <- function(sampleName) {
 lossRows <- worstFirst |>
     mutate(row = pmap_chr(list(sample, sampleType, meanCoverage, lowCoverage, rawCoverage),
         \(s, t, cov, low, raw) {
-            covTxt <- if (is.na(cov)) "n/a" else sprintf("%.0fx", cov)
-            rawTxt <- if (is.na(raw)) "n/a" else sprintf("%.0fx", raw)
+            covTxt <- if (is.na(cov)) "n/a" else sprintf("%.1fx", cov)
+            rawTxt <- if (is.na(raw)) "n/a" else sprintf("%.1fx", raw)
             glue('<tr><td class="name" data-label="Sample">{esc(s)}</td>',
                  '<td data-label="T/N">{t}</td>{lossCells(s)}',
                  '<td class="{if (is.na(cov)) "smissing" else if (isTRUE(low)) "swarn" else "spass"}" data-label="Coverage">',
@@ -863,7 +863,7 @@ failureCards <- if (nFail > 0) {
     <thead><tr><th>What we measured</th><th>This sample</th><th>Normal</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
-  <p class="lead">Usable coverage after quality filtering: <b>{if (is.na(row$meanCoverage)) "n/a" else sprintf("%.0fx", row$meanCoverage)}</b>.</p>
+  <p class="lead">Usable coverage after quality filtering: <b>{if (is.na(row$meanCoverage)) "n/a" else sprintf("%.1fx", row$meanCoverage)}</b>.</p>
   <p class="what">Effect on downstream analysis</p>
   <ul>{actions}</ul>
   <p class="caveat">We can measure what the sequence data looks like, but not what
