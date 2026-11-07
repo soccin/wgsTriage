@@ -110,7 +110,9 @@ under genuine degradation.
 
 Coverage floors are 30x for normals and 80x for tumors by default; set them
 with `-c|--coverage T,N`, e.g. `-c 40,10`. A sample whose class cannot be
-read from its name is held to the higher of the two floors. Falling below the
+read from its name is held to the higher of the two floors. Coverage is
+rounded to one decimal, as the report prints it, before the comparison: 9.96x
+is 10.0x and passes a 10x floor. Falling below the
 floor raises a warning, which counts toward the three above; coverage alone
 never fails a sample.
 

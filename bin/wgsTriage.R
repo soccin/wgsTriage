@@ -234,9 +234,13 @@ dat <- dat |>
 ## Coverage floor, per sample class. Computed here rather than after the
 ## verdicts because it is one of the checks the verdict is made from.
 ##
+## Coverage is rounded to one decimal before the comparison, the precision the
+## report prints it at. Otherwise a sample shown as 10.0x is flagged against a
+## 10x floor, and a floor of 10 would have to be given as 9.95 to mean 10.
+##
 dat <- dat |>
     mutate(coverageFloor = unname(COVERAGE_WARN[sampleType]),
-           lowCoverage = !is.na(meanCoverage) & meanCoverage < coverageFloor)
+           lowCoverage = !is.na(meanCoverage) & round(meanCoverage, 1) < coverageFloor)
 
 ##
 ## Drop filter thresholds whose entire source is absent for this cohort. A missing multiqc
